@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 enum message_type {
 	MESSAGE_JOIN,
 };

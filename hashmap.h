@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 /* Comparator and hash function that treat their arguments as numeric values.
  */
 int hashmap_ptr_equals(void *k1, void *k2);
