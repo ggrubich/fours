@@ -11,8 +11,8 @@
 #include "hashmap.h"
 #include "buffer.h"
 
-const size_t MIN_READ = 64;
-const size_t MIN_WRITE = 64;
+const size_t MAX_READ = 64;
+const size_t MAX_WRITE = 64;
 
 struct client {
 	int sock;
@@ -135,49 +135,56 @@ int epoll_toggle_write(int epoll, int sock, int on)
 
 int server_read(struct server *s, struct client *cli)
 {
+	char buf[MAX_READ];
+	size_t len, i;
 	int n;
-	char *pos;;
-	if (buffer_reserve(&cli->input, MIN_READ) < 0) {
-		return -1;
-	}
-	n = read(cli->sock, buffer_back(&cli->input), buffer_rem(&cli->input));
+	n = read(cli->sock, buf, sizeof(buf));
 	if (n < 0) {
 		return -1;
 	}
 	if (n == 0) {
 		return server_disconnect(s, cli);
 	}
-	buffer_push(&cli->input, n);
+	if (buffer_push(&cli->input, buf, n) < 0) {
+		return -1;
+	}
 	for (;;) {
-		pos = memchr(buffer_front(&cli->input),
-				'\n',
-				buffer_len(&cli->input));
-		if (!pos) {
+		for (i = 0; i < buffer_len(&cli->input); ++i) {
+			if (buffer_get(&cli->input, i) == '\n') {
+				break;
+			}
+		}
+		if (buffer_len(&cli->input) == i) {
 			break;
 		}
-		n = pos - buffer_front(&cli->input) + 1;
-		// TODO do something with the request, for now we just echo it back
+		len = i + 1;
 		printf("read ");
-		fwrite(buffer_front(&cli->input), 1, n, stdout);
-		if (buffer_reserve(&cli->output, n) < 0) {
-			return -1;
+		for (i = 0; i < len; ++i) {
+			printf("%c", buffer_get(&cli->input, i));
 		}
+		// TODO do something with the request, for now we just echo it back
 		if (buffer_len(&cli->output) == 0) {
 			if (epoll_toggle_write(s->epoll, cli->sock, 1) < 0) {
 				return -1;
 			}
 		}
-		memcpy(buffer_back(&cli->output), buffer_front(&cli->input), n);
-		buffer_push(&cli->output, n);
-		buffer_pop(&cli->input, n);
+		if (buffer_append(&cli->output, &cli->input, len) < 0) {
+			return -1;
+		}
 	}
 	return 0;
 }
 
 int server_write(struct server *s, struct client *cli)
 {
+	char buf[MAX_WRITE];
+	size_t len;
 	int n;
-	n = write(cli->sock, buffer_front(&cli->output), buffer_len(&cli->output));
+	len = sizeof(buf) < buffer_len(&cli->output)
+		? sizeof(buf)
+		: buffer_len(&cli->output);
+	buffer_peek(&cli->output, buf, len);
+	n = write(cli->sock, buf, len);
 	if (n < 0 && errno == EPIPE) {
 		errno = 0;
 		return server_disconnect(s, cli);
@@ -185,7 +192,7 @@ int server_write(struct server *s, struct client *cli)
 	if (n < 0) {
 		return -1;
 	}
-	buffer_pop(&cli->output, n);
+	buffer_pop(&cli->output, NULL, n);
 	if (buffer_len(&cli->output) == 0) {
 		if (epoll_toggle_write(s->epoll, cli->sock, 0) < 0) {
 			return -1;
