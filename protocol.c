@@ -297,8 +297,10 @@ static int format_raw_message(struct raw_message *msg, struct buffer *buf)
 void close_message(struct message *msg)
 {
 	switch (msg->type) {
-	case MESSAGE_JOIN:
+	case MSG_JOIN:
 		free(msg->data.join.name);
+		break;
+	default:
 		break;
 	}
 }
@@ -319,11 +321,13 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	if (raw->len == 0 || raw->fields[0].type != FIELD_SYMBOL) {
 		return -1;
 	}
-	if (strcmp(raw->fields[0].data.symbol, "join") == 0) {
+	if (strcmp(raw->fields[0].data.symbol, "invalid") == 0) {
+		msg->type = MSG_INVALID;
+	} else if (strcmp(raw->fields[0].data.symbol, "join") == 0) {
 		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
 			return -1;
 		}
-		msg->type = MESSAGE_JOIN;
+		msg->type = MSG_JOIN;
 		msg->data.join.name = raw->fields[1].data.string;
 		raw->fields[1].data.string = NULL;
 	} else {
@@ -372,7 +376,14 @@ static int init_raw_message(struct raw_message *raw, size_t len)
 static int encode_message(struct message *msg, struct raw_message *raw)
 {
 	switch (msg->type) {
-	case MESSAGE_JOIN:
+	case MSG_INVALID:
+		if (init_raw_message(raw, 1) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "invalid";
+		break;
+	case MSG_JOIN:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
 		}

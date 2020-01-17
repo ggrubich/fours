@@ -5,7 +5,8 @@
 #include "buffer.h"
 
 enum message_type {
-	MESSAGE_JOIN,
+	MSG_INVALID,
+	MSG_JOIN,
 };
 
 struct message {
