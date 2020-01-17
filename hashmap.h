@@ -57,3 +57,7 @@ void hashmap_remove(struct hashmap *h, void *key);
  * and -1 otherwise.
  */
 int hashmap_get(struct hashmap *h, void *key, void **valueptr);
+
+/* Returns 1 if hashmap contains the key and 0 if it doesn't.
+ */
+int hashmap_contains(struct hashmap *h, void *key);

@@ -195,3 +195,9 @@ int hashmap_get(struct hashmap *h, void *key, void **valueptr)
 	*valueptr = bucket->value;
 	return 0;
 }
+
+int hashmap_contains(struct hashmap *h, void *key)
+{
+	void *tmp;
+	return hashmap_get(h, key, &tmp) == 0;
+}
