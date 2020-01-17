@@ -297,8 +297,11 @@ static int format_raw_message(struct raw_message *msg, struct buffer *buf)
 void close_message(struct message *msg)
 {
 	switch (msg->type) {
-	case MSG_JOIN:
-		free(msg->data.join.name);
+	case MSG_LOGIN:
+		free(msg->data.login.name);
+		break;
+	case MSG_LOGIN_ERR:
+		free(msg->data.login_err.text);
 		break;
 	default:
 		break;
@@ -318,17 +321,28 @@ static size_t message_length(struct buffer *buf)
 
 static int decode_message(struct raw_message *raw, struct message *msg)
 {
+	char *name;
 	if (raw->len == 0 || raw->fields[0].type != FIELD_SYMBOL) {
 		return -1;
 	}
-	if (strcmp(raw->fields[0].data.symbol, "invalid") == 0) {
+	name = raw->fields[0].data.symbol;
+	if (strcmp(name, "invalid") == 0) {
 		msg->type = MSG_INVALID;
-	} else if (strcmp(raw->fields[0].data.symbol, "join") == 0) {
+	} else if (strcmp(name, "login") == 0) {
 		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
 			return -1;
 		}
-		msg->type = MSG_JOIN;
-		msg->data.join.name = raw->fields[1].data.string;
+		msg->type = MSG_LOGIN;
+		msg->data.login.name = raw->fields[1].data.string;
+		raw->fields[1].data.string = NULL;
+	} else if (strcmp(name, "login_ok") == 0) {
+		msg->type = MSG_LOGIN_OK;
+	} else if (strcmp(name, "login_err") == 0) {
+		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
+			return -1;
+		}
+		msg->type = MSG_LOGIN_ERR;
+		msg->data.login_err.text = raw->fields[1].data.string;
 		raw->fields[1].data.string = NULL;
 	} else {
 		return -1;
@@ -383,14 +397,30 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		raw->fields[0].type = FIELD_SYMBOL;
 		raw->fields[0].data.symbol = "invalid";
 		break;
-	case MSG_JOIN:
+	case MSG_LOGIN:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
 		}
 		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "join";
+		raw->fields[0].data.symbol = "login";
 		raw->fields[1].type = FIELD_STRING;
-		raw->fields[1].data.string = msg->data.join.name;
+		raw->fields[1].data.string = msg->data.login.name;
+		break;
+	case MSG_LOGIN_OK:
+		if (init_raw_message(raw, 1) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "login_ok";
+		break;
+	case MSG_LOGIN_ERR:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "login_err";
+		raw->fields[1].type = FIELD_STRING;
+		raw->fields[1].data.string = msg->data.login_err.text;
 		break;
 	default:
 		return -1;

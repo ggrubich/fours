@@ -6,7 +6,9 @@
 
 enum message_type {
 	MSG_INVALID,
-	MSG_JOIN,
+	MSG_LOGIN,
+	MSG_LOGIN_OK,
+	MSG_LOGIN_ERR,
 };
 
 struct message {
@@ -14,7 +16,10 @@ struct message {
 	union {
 		struct {
 			char *name;
-		} join;
+		} login;
+		struct {
+			char *text;
+		} login_err;
 	} data;
 };
 

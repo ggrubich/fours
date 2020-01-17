@@ -17,15 +17,46 @@
 
 struct client {
 	int sock;
+	// NULL if client is not logged in
+	char *name;
 	struct buffer input;
 	struct buffer output;
 };
+
+struct client *client_new(int sock)
+{
+	struct client *cli = malloc(sizeof(*cli));
+	if (!cli) {
+		return NULL;
+	}
+	cli->sock = sock;
+	cli->name = NULL;
+	buffer_init(&cli->input);
+	buffer_init(&cli->output);
+	return cli;
+}
+
+void client_free(struct client *cli)
+{
+	close(cli->sock);
+	free(cli->name);
+	buffer_finalize(&cli->input);
+	buffer_finalize(&cli->output);
+	free(cli);
+}
+
+void client_free_(void *cli)
+{
+	client_free((struct client *)cli);
+}
 
 struct server {
 	int epoll;
 	int listener;
 	// clients by file descrptior, maps int to struct client
-	struct hashmap clients;
+	struct hashmap clients_by_fd;
+	// clients by name, maps string to int
+	struct hashmap fds_by_name;
 };
 
 int make_listener(int port)
@@ -72,39 +103,41 @@ int server_init(struct server *s, int port)
 		close(s->listener);
 		return -1;
 	}
-	hashmap_init(&s->clients, &hashmap_ptr_equals, &hashmap_ptr_hash, NULL, &free);
+	hashmap_init(&s->clients_by_fd, &hashmap_ptr_equals, &hashmap_ptr_hash,
+			NULL, &client_free_);
+	hashmap_init(&s->fds_by_name, &hashmap_string_equals, &hashmap_string_hash,
+			&free, NULL);
 	return 0;
 }
 
 void server_finalize(struct server *s)
 {
 	close(s->listener);
-	hashmap_finalize(&s->clients);
+	hashmap_finalize(&s->clients_by_fd);
+	hashmap_finalize(&s->fds_by_name);
 }
 
 int server_accept(struct server *s)
 {
-	struct client *client = malloc(sizeof(*client));
+	struct client *cli;
 	struct epoll_event event;
-	if (!client) {
-		return -1;
-	}
 	int sock = accept(s->listener, NULL, NULL);
 	if (sock < 0) {
 		return -1;
 	}
-	client->sock = sock;
-	buffer_init(&client->input);
-	buffer_init(&client->output);
-	if (hashmap_insert(&s->clients, (void *)(intptr_t)sock, (void *)client) < 0) {
+	cli = client_new(sock);
+	if (!cli) {
 		close(sock);
+		return -1;
+	}
+	if (hashmap_insert(&s->clients_by_fd, (void *)(intptr_t)sock, (void *)cli) < 0) {
+		client_free(cli);
 		return -1;
 	}
 	event.events = EPOLLIN;
 	event.data.fd = sock;
 	if (epoll_ctl(s->epoll, EPOLL_CTL_ADD, sock, &event) < 0) {
-		hashmap_remove(&s->clients, (void *)(intptr_t)sock);
-		close(sock);
+		hashmap_remove(&s->clients_by_fd, (void *)(intptr_t)sock);
 		return -1;
 	}
 	printf("accepted client %d\n", sock);
@@ -114,11 +147,11 @@ int server_accept(struct server *s)
 int server_disconnect(struct server *s, struct client *cli)
 {
 	int sock = cli->sock;
-	close(sock);
-	buffer_finalize(&cli->input);
-	buffer_finalize(&cli->output);
-	hashmap_remove(&s->clients, (void *)(intptr_t)sock);
-	printf("cli %d disconnected\n", sock);
+	if (cli->name) {
+		hashmap_remove(&s->fds_by_name, (void *)cli->name);
+	}
+	hashmap_remove(&s->clients_by_fd, (void *)(intptr_t)sock);
+	printf("client %d disconnected\n", sock);
 	return 0;
 }
 
@@ -144,10 +177,43 @@ int respond(struct server *s, struct client *cli, struct message *msg)
 	return format_message(msg, &cli->output);
 }
 
+int handle_login(struct server *s, struct client *cli, char *name)
+{
+	char *name1, *name2;
+	struct message resp;
+	if (cli->name) {
+		resp.type = MSG_LOGIN_ERR;
+		resp.data.login_err.text = "user already logged in";
+		return respond(s, cli, &resp);
+	}
+	if (hashmap_contains(&s->fds_by_name, (void *)name)) {
+		resp.type = MSG_LOGIN_ERR;
+		resp.data.login_err.text = "name already taken";
+		return respond(s, cli, &resp);
+	}
+	name1 = strdup(name);
+	name2 = strdup(name);
+	if (!name1 || !name2) {
+		free(name1);
+		free(name2);
+		return -1;
+	}
+	hashmap_insert(&s->fds_by_name, (void *)name1, (void *)(intptr_t)cli->sock);
+	cli->name = name2;
+	resp.type = MSG_LOGIN_OK;
+	return respond(s, cli, &resp);
+}
+
 int handle_message(struct server *s, struct client *cli, struct message *msg)
 {
-	// TODO do something with the message
-	return respond(s, cli, msg);
+	struct message resp;
+	switch (msg->type) {
+	case MSG_LOGIN:
+		return handle_login(s, cli, msg->data.login.name);
+	default:
+		resp.type = MSG_INVALID;
+		return respond(s, cli, &resp);
+	}
 }
 
 int server_read(struct server *s, struct client *cli)
@@ -223,7 +289,7 @@ int server_write(struct server *s, struct client *cli)
 int with_client(struct server *s, int sock, int (*fn)(struct server *, struct client *))
 {
 	struct client *cli;
-	if (hashmap_get(&s->clients, (void *)(intptr_t)sock, (void **)&cli) < 0) {
+	if (hashmap_get(&s->clients_by_fd, (void *)(intptr_t)sock, (void **)&cli) < 0) {
 		return 0;
 	}
 	return fn(s, cli);
