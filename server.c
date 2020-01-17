@@ -11,8 +11,8 @@
 #include "hashmap.h"
 #include "buffer.h"
 
-const size_t MAX_READ = 64;
-const size_t MAX_WRITE = 64;
+#define MAX_READ 64
+#define MAX_WRITE 64
 
 struct client {
 	int sock;
@@ -201,7 +201,7 @@ int server_write(struct server *s, struct client *cli)
 	return 0;
 }
 
-const int MAX_EVENTS = 32;
+#define MAX_EVENTS 32
 
 int with_client(struct server *s, int sock, int (*fn)(struct server *, struct client *))
 {

@@ -96,7 +96,7 @@ static int parse_integer(struct parser *p, int *out)
 	return 0;
 }
 
-const size_t MAX_SYMBOL_LEN = 32;
+#define MAX_SYMBOL_LEN 32
 
 static int parse_symbol(struct parser *p, char **out)
 {
