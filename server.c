@@ -10,6 +10,7 @@
 
 #include "hashmap.h"
 #include "buffer.h"
+#include "protocol.h"
 
 #define MAX_READ 64
 #define MAX_WRITE 64
@@ -133,11 +134,27 @@ int epoll_toggle_write(int epoll, int sock, int on)
 	return epoll_ctl(epoll, EPOLL_CTL_MOD, sock, &event);
 }
 
+int respond(struct server *s, struct client *cli, struct message *msg)
+{
+	if (buffer_len(&cli->output) == 0) {
+		if (epoll_toggle_write(s->epoll, cli->sock, 1) < 0) {
+			return -1;
+		}
+	}
+	return format_message(msg, &cli->output);
+}
+
+int handle_message(struct server *s, struct client *cli, struct message *msg)
+{
+	// TODO do something with the message
+	return respond(s, cli, msg);
+}
+
 int server_read(struct server *s, struct client *cli)
 {
 	char buf[MAX_READ];
-	size_t len, i;
-	int n;
+	int i, n;
+	struct message msg;
 	n = read(cli->sock, buf, sizeof(buf));
 	if (n < 0) {
 		return -1;
@@ -148,29 +165,29 @@ int server_read(struct server *s, struct client *cli)
 	if (buffer_push(&cli->input, buf, n) < 0) {
 		return -1;
 	}
-	for (;;) {
-		for (i = 0; i < buffer_len(&cli->input); ++i) {
-			if (buffer_get(&cli->input, i) == '\n') {
-				break;
+	while ((n = parse_message(&cli->input, &msg)) != 0) {
+		if (n < 0) {
+			n = -n;
+			printf("invalid message: ");
+			for (i = 0; i < n; ++i) {
+				printf("%c", buffer_get(&cli->input, i));
 			}
-		}
-		if (buffer_len(&cli->input) == i) {
-			break;
-		}
-		len = i + 1;
-		printf("read ");
-		for (i = 0; i < len; ++i) {
-			printf("%c", buffer_get(&cli->input, i));
-		}
-		// TODO do something with the request, for now we just echo it back
-		if (buffer_len(&cli->output) == 0) {
-			if (epoll_toggle_write(s->epoll, cli->sock, 1) < 0) {
+			msg.type = MSG_INVALID;
+			if (respond(s, cli, &msg) < 0) {
+				return -1;
+			}
+		} else {
+			printf("message: ");
+			for (i = 0; i < n; ++i) {
+				printf("%c", buffer_get(&cli->input, i));
+			}
+			if (handle_message(s, cli, &msg) < 0) {
+				close_message(&msg);
 				return -1;
 			}
 		}
-		if (buffer_append(&cli->output, &cli->input, len) < 0) {
-			return -1;
-		}
+		close_message(&msg);
+		buffer_pop(&cli->input, NULL, n);
 	}
 	return 0;
 }
