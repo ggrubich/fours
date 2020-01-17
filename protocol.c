@@ -223,6 +223,77 @@ static int parse_raw_message(struct parser *p, struct raw_message *msg)
 	return 0;
 }
 
+static int format_integer(int x, struct buffer *buf)
+{
+	char bytes[16];
+	sprintf(bytes, "%d", x);
+	return buffer_push(buf, bytes, strlen(bytes));
+}
+
+static int format_symbol(char *sym, struct buffer *buf)
+{
+	return buffer_push(buf, sym, strlen(sym));
+}
+
+static int format_string(char *str, struct buffer *buf)
+{
+	size_t i, len;
+	int res;
+	len = strlen(str);
+	if (buffer_push(buf, "\"", 1) < 0) {
+		return -1;
+	}
+	for (i = 0; i < len; ++i) {
+		switch (str[i]) {
+		case '\\':
+			res = buffer_push(buf, "\\\\", 2);
+			break;
+		case '\n':
+			res = buffer_push(buf, "\\n", 2);
+			break;
+		case '"':
+			res = buffer_push(buf, "\\\"", 2);
+			break;
+		default:
+			res = buffer_push(buf, &str[i], 1);
+		}
+		if (res < 0) {
+			return -1;
+		}
+	}
+	return buffer_push(buf, "\"", 1);
+}
+
+static int format_raw_field(struct raw_field *field, struct buffer *buf)
+{
+	switch (field->type) {
+	case FIELD_INTEGER:
+		return format_integer(field->data.integer, buf);
+	case FIELD_SYMBOL:
+		return format_symbol(field->data.symbol, buf);
+	case FIELD_STRING:
+		return format_string(field->data.string, buf);
+	default:
+		return -1;
+	}
+}
+
+static int format_raw_message(struct raw_message *msg, struct buffer *buf)
+{
+	size_t i;
+	for (i = 0; i < msg->len; ++i) {
+		if (format_raw_field(&msg->fields[i], buf) < 0) {
+			return -1;
+		}
+		if (i + 1 < msg->len) {
+			if (buffer_push(buf, " ", 1) < 0) {
+				return -1;
+			}
+		}
+	}
+	return buffer_push(buf, "\n", 1);
+}
+
 void close_message(struct message *msg)
 {
 	switch (msg->type) {
@@ -281,4 +352,49 @@ int parse_message(struct buffer *buf, struct message *msg)
 	}
 	close_raw_message(&raw);
 	return len;
+}
+
+static int init_raw_message(struct raw_message *raw, size_t len)
+{
+	size_t i;
+	raw->fields = malloc(len * sizeof(*raw->fields));
+	if (!raw->fields) {
+		return -1;
+	}
+	raw->len = raw->cap = len;
+	for (i = 0; i < len; ++i) {
+		raw->fields[i].type = FIELD_INTEGER;
+		raw->fields[i].data.integer = 0;
+	}
+	return 0;
+}
+
+static int encode_message(struct message *msg, struct raw_message *raw)
+{
+	switch (msg->type) {
+	case MESSAGE_JOIN:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "join";
+		raw->fields[1].type = FIELD_STRING;
+		raw->fields[1].data.string = msg->data.join.name;
+		break;
+	default:
+		return -1;
+	}
+	return 0;
+}
+
+int format_message(struct message *msg, struct buffer *buf)
+{
+	struct raw_message raw;
+	int res;
+	if (encode_message(msg, &raw) < 0) {
+		return -1;
+	}
+	res = format_raw_message(&raw, buf);
+	free(raw.fields);
+	return res;
 }

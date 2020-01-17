@@ -30,3 +30,10 @@ void close_message(struct message *msg);
  * If the buffer doesn't contain any complete messages, function will return 0.
  */
 int parse_message(struct buffer *buf, struct message *msg);
+
+/* Writes a textual representation (including the trailing newline) of the message
+ * to the buffer. This function will not mutate the message.
+ *
+ * On success returns 0, on error -1.
+ */
+int format_message(struct message *msg, struct buffer *buf);
