@@ -50,24 +50,25 @@ static void close_raw_message(struct raw_message *msg)
 }
 
 struct parser {
-	char *cur;
-	char *end;
+	struct buffer *buf;
+	size_t idx;
+	size_t len;
 };
-
-static int next(struct parser *p)
-{
-	int c;
-	if (p->cur >= p->end) {
-		return EOF;
-	}
-	c = *p->cur;
-	++p->cur;
-	return c;
-}
 
 static int peek(struct parser *p)
 {
-	return p->cur >= p->end ? EOF : *p->cur;
+	// ignore the trailing newline
+	return p->idx >= p->len - 1 ? EOF : buffer_get(p->buf, p->idx);
+}
+
+static int next(struct parser *p)
+{
+	int c = peek(p);
+	if (c == EOF) {
+		return EOF;
+	}
+	p->idx += 1;
+	return c;
 }
 
 static int parse_integer(struct parser *p, int *out)
@@ -231,29 +232,53 @@ void close_message(struct message *msg)
 	}
 }
 
-int parse_message(char *data, size_t len, struct message *msg)
+static size_t message_length(struct buffer *buf)
 {
-	struct parser parser = {data, data + len};
-	struct raw_message raw;
-	if (parse_raw_message(&parser, &raw) < 0) {
+	int i;
+	for (i = 0; i < buffer_len(buf); ++i) {
+		if (buffer_get(buf, i) == '\n') {
+			return i + 1;
+		}
+	}
+	return 0;
+}
+
+static int decode_message(struct raw_message *raw, struct message *msg)
+{
+	if (raw->len == 0 || raw->fields[0].type != FIELD_SYMBOL) {
 		return -1;
 	}
-	if (raw.len == 0 || raw.fields[0].type != FIELD_SYMBOL) {
-		close_raw_message(&raw);
-		return -1;
-	}
-	if (strcmp(raw.fields[0].data.symbol, "join") == 0) {
-		if (raw.len != 2 || raw.fields[1].type != FIELD_STRING) {
-			close_raw_message(&raw);
+	if (strcmp(raw->fields[0].data.symbol, "join") == 0) {
+		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
 			return -1;
 		}
 		msg->type = MESSAGE_JOIN;
-		msg->data.join.name = raw.fields[1].data.string;
-		raw.fields[1].data.string = NULL;
+		msg->data.join.name = raw->fields[1].data.string;
+		raw->fields[1].data.string = NULL;
 	} else {
-		close_raw_message(&raw);
 		return -1;
 	}
-	close_raw_message(&raw);
 	return 0;
+}
+
+int parse_message(struct buffer *buf, struct message *msg)
+{
+	struct parser parser;
+	struct raw_message raw;
+	int len = message_length(buf);
+	if (len == 0) {
+		return 0;
+	}
+	parser.buf = buf;
+	parser.idx = 0;
+	parser.len = len;
+	if (parse_raw_message(&parser, &raw) < 0) {
+		return -(int)len;
+	}
+	if (decode_message(&raw, msg) < 0) {
+		close_raw_message(&raw);
+		return -(int)len;
+	}
+	close_raw_message(&raw);
+	return len;
 }
