@@ -9,6 +9,9 @@ enum message_type {
 	MSG_LOGIN,
 	MSG_LOGIN_OK,
 	MSG_LOGIN_ERR,
+	MSG_START,
+	MSG_START_OK,
+	MSG_START_ERR,
 };
 
 struct message {
@@ -20,6 +23,15 @@ struct message {
 		struct {
 			char *text;
 		} login_err;
+		struct {
+			char *other;
+			int red;
+			int width;
+			int height;
+		} start_ok;
+		struct {
+			char *text;
+		} start_err;
 	} data;
 };
 

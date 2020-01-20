@@ -15,13 +15,40 @@
 #define MAX_READ 64
 #define MAX_WRITE 64
 
+struct pair {
+	struct client *red;
+	struct client *blue;
+};
+
 struct client {
 	int sock;
 	// NULL if client is not logged in
 	char *name;
+	// NULL if no pair
+	struct pair *pair;
 	struct buffer input;
 	struct buffer output;
 };
+
+struct pair *pair_new(struct client *red, struct client *blue)
+{
+	struct pair *pair = malloc(sizeof(*pair));
+	if (!pair) {
+		return NULL;
+	}
+	pair->red = red;
+	pair->blue = blue;
+	red->pair = pair;
+	blue->pair = pair;
+	return pair;
+}
+
+void pair_free(struct pair *pair)
+{
+	pair->red->pair = NULL;
+	pair->blue->pair = NULL;
+	free(pair);
+}
 
 struct client *client_new(int sock)
 {
@@ -31,6 +58,7 @@ struct client *client_new(int sock)
 	}
 	cli->sock = sock;
 	cli->name = NULL;
+	cli->pair = NULL;
 	buffer_init(&cli->input);
 	buffer_init(&cli->output);
 	return cli;
@@ -40,6 +68,9 @@ void client_free(struct client *cli)
 {
 	close(cli->sock);
 	free(cli->name);
+	if (cli->pair) {
+		pair_free(cli->pair);
+	}
 	buffer_finalize(&cli->input);
 	buffer_finalize(&cli->output);
 	free(cli);
@@ -57,6 +88,8 @@ struct server {
 	struct hashmap clients_by_fd;
 	// clients by name, maps string to int
 	struct hashmap fds_by_name;
+	// fd of the client waiting for a game. -1 if empty.
+	int waiting_client;
 };
 
 int make_listener(int port)
@@ -107,6 +140,7 @@ int server_init(struct server *s, int port)
 			NULL, &client_free_);
 	hashmap_init(&s->fds_by_name, &hashmap_string_equals, &hashmap_string_hash,
 			&free, NULL);
+	s->waiting_client = -1;
 	return 0;
 }
 
@@ -149,6 +183,9 @@ int server_disconnect(struct server *s, struct client *cli)
 	int sock = cli->sock;
 	if (cli->name) {
 		hashmap_remove(&s->fds_by_name, (void *)cli->name);
+	}
+	if (s->waiting_client == cli->sock) {
+		s->waiting_client = -1;
 	}
 	hashmap_remove(&s->clients_by_fd, (void *)(intptr_t)sock);
 	printf("client %d disconnected\n", sock);
@@ -204,12 +241,66 @@ int handle_login(struct server *s, struct client *cli, char *name)
 	return respond(s, cli, &resp);
 }
 
+int respond_start_ok(struct server *s, struct client *cli)
+{
+	struct message resp;
+	resp.type = MSG_START_OK;
+	int red = cli == cli->pair->red;
+	struct client *other = red ? cli->pair->blue : cli->pair->red;
+	resp.data.start_ok.other = other->name;
+	resp.data.start_ok.red = red;
+	// TODO placeholder values, do something
+	resp.data.start_ok.width = 12;
+	resp.data.start_ok.height = 34;
+	return respond(s, cli, &resp);
+}
+
+int handle_start(struct server *s, struct client *cli)
+{
+	struct message resp;
+	struct client *other;
+	struct pair *pair;
+	resp.type = MSG_START_ERR;
+	resp.data.start_err.text = NULL;
+	if (!cli->name) {
+		resp.data.start_err.text = "not logged in";
+	} else if (cli->pair) {
+		resp.data.start_err.text = "already in a game";
+	} else if (s->waiting_client == cli->sock) {
+		resp.data.start_err.text = "already waiting for a game";
+	}
+	if (resp.data.start_err.text) {
+		return respond(s, cli, &resp);
+	}
+	if (hashmap_get(&s->clients_by_fd,
+			(void *)(uintptr_t)s->waiting_client,
+			(void **)&other) < 0)
+	{
+		s->waiting_client = cli->sock;
+		return 0;
+	}
+	pair = pair_new(cli, other);
+	if (!pair) {
+		return -1;
+	}
+	s->waiting_client = -1;
+	if (respond_start_ok(s, cli) < 0) {
+		return -1;
+	}
+	if (respond_start_ok(s, other) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
 int handle_message(struct server *s, struct client *cli, struct message *msg)
 {
 	struct message resp;
 	switch (msg->type) {
 	case MSG_LOGIN:
 		return handle_login(s, cli, msg->data.login.name);
+	case MSG_START:
+		return handle_start(s, cli);
 	default:
 		resp.type = MSG_INVALID;
 		return respond(s, cli, &resp);

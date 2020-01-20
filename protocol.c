@@ -303,6 +303,12 @@ void close_message(struct message *msg)
 	case MSG_LOGIN_ERR:
 		free(msg->data.login_err.text);
 		break;
+	case MSG_START_OK:
+		free(msg->data.start_ok.other);
+		break;
+	case MSG_START_ERR:
+		free(msg->data.start_err.text);
+		break;
 	default:
 		break;
 	}
@@ -343,6 +349,33 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		}
 		msg->type = MSG_LOGIN_ERR;
 		msg->data.login_err.text = raw->fields[1].data.string;
+		raw->fields[1].data.string = NULL;
+	} else if (strcmp(name, "start") == 0) {
+		if (raw->len != 1) {
+			return -1;
+		}
+		msg->type = MSG_START;
+	} else if (strcmp(name, "start_ok") == 0) {
+		if (raw->len != 5
+			|| raw->fields[1].type != FIELD_STRING
+			|| raw->fields[2].type != FIELD_INTEGER
+			|| raw->fields[3].type != FIELD_INTEGER
+			|| raw->fields[4].type != FIELD_INTEGER)
+		{
+			return -1;
+		}
+		msg->type = MSG_START_OK;
+		msg->data.start_ok.other = raw->fields[1].data.string;
+		raw->fields[1].data.string = NULL;
+		msg->data.start_ok.red = raw->fields[2].data.integer;
+		msg->data.start_ok.width = raw->fields[3].data.integer;
+		msg->data.start_ok.height = raw->fields[4].data.integer;
+	} else if (strcmp(name, "start_err") == 0) {
+		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
+			return -1;
+		}
+		msg->type = MSG_LOGIN_ERR;
+		msg->data.start_err.text = raw->fields[1].data.string;
 		raw->fields[1].data.string = NULL;
 	} else {
 		return -1;
@@ -421,6 +454,37 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		raw->fields[0].data.symbol = "login_err";
 		raw->fields[1].type = FIELD_STRING;
 		raw->fields[1].data.string = msg->data.login_err.text;
+		break;
+	case MSG_START:
+		if (init_raw_message(raw, 1) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "start";
+		break;
+	case MSG_START_OK:
+		if (init_raw_message(raw, 5) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "start_ok";
+		raw->fields[1].type = FIELD_STRING;
+		raw->fields[1].data.string = msg->data.start_ok.other;
+		raw->fields[2].type = FIELD_INTEGER;
+		raw->fields[2].data.integer = msg->data.start_ok.red;
+		raw->fields[3].type = FIELD_INTEGER;
+		raw->fields[3].data.integer = msg->data.start_ok.width;
+		raw->fields[4].type = FIELD_INTEGER;
+		raw->fields[4].data.integer = msg->data.start_ok.height;
+		break;
+	case MSG_START_ERR:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		raw->fields[0].type = FIELD_SYMBOL;
+		raw->fields[0].data.symbol = "start_err";
+		raw->fields[1].type = FIELD_STRING;
+		raw->fields[1].data.string = msg->data.start_err.text;
 		break;
 	default:
 		return -1;
