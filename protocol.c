@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <stdarg.h>
 
 #include "protocol.h"
 
@@ -325,58 +326,70 @@ static size_t message_length(struct buffer *buf)
 	return 0;
 }
 
+static int match(struct raw_message *raw, char *name, size_t nargs, ...)
+{
+	va_list args;
+	size_t i;
+	enum field_type type;
+	int ok = 1;
+	if (raw->len != nargs + 1
+		|| raw->fields[0].type != FIELD_SYMBOL
+		|| strcmp(raw->fields[0].data.symbol, name) != 0)
+	{
+		return 0;
+	}
+	va_start(args, nargs);
+	for (i = 1; i <= nargs; ++i) {
+		type = va_arg(args, enum field_type);
+		if (raw->fields[i].type != type) {
+			ok = 0;
+			break;
+		}
+	}
+	va_end(args);
+	return ok;
+}
+
+static int take_integer(struct raw_message *raw, size_t idx)
+{
+	return raw->fields[idx].data.integer;
+}
+
+static char *take_string(struct raw_message *raw, size_t idx)
+{
+	char *val = raw->fields[idx].data.string;
+	raw->fields[idx].data.string = NULL;
+	return val;
+}
+
 static int decode_message(struct raw_message *raw, struct message *msg)
 {
-	char *name;
-	if (raw->len == 0 || raw->fields[0].type != FIELD_SYMBOL) {
-		return -1;
-	}
-	name = raw->fields[0].data.symbol;
-	if (strcmp(name, "invalid") == 0) {
+	if (match(raw, "invalid", 0)) {
 		msg->type = MSG_INVALID;
-	} else if (strcmp(name, "login") == 0) {
-		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
-			return -1;
-		}
+	} else if (match(raw, "login", 1, FIELD_STRING)) {
 		msg->type = MSG_LOGIN;
-		msg->data.login.name = raw->fields[1].data.string;
-		raw->fields[1].data.string = NULL;
-	} else if (strcmp(name, "login_ok") == 0) {
+		msg->data.login.name = take_string(raw, 1);
+	} else if (match(raw, "login_ok", 0)) {
 		msg->type = MSG_LOGIN_OK;
-	} else if (strcmp(name, "login_err") == 0) {
-		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
-			return -1;
-		}
+	} else if (match(raw, "login_err", 1, FIELD_STRING)) {
 		msg->type = MSG_LOGIN_ERR;
-		msg->data.login_err.text = raw->fields[1].data.string;
-		raw->fields[1].data.string = NULL;
-	} else if (strcmp(name, "start") == 0) {
-		if (raw->len != 1) {
-			return -1;
-		}
+		msg->data.login_err.text = take_string(raw, 1);
+	} else if (match(raw, "start", 0)) {
 		msg->type = MSG_START;
-	} else if (strcmp(name, "start_ok") == 0) {
-		if (raw->len != 5
-			|| raw->fields[1].type != FIELD_STRING
-			|| raw->fields[2].type != FIELD_INTEGER
-			|| raw->fields[3].type != FIELD_INTEGER
-			|| raw->fields[4].type != FIELD_INTEGER)
-		{
-			return -1;
-		}
+	} else if (match(raw, "start_ok", 4,
+				FIELD_STRING,
+				FIELD_INTEGER,
+				FIELD_INTEGER,
+				FIELD_INTEGER))
+	{
 		msg->type = MSG_START_OK;
-		msg->data.start_ok.other = raw->fields[1].data.string;
-		raw->fields[1].data.string = NULL;
-		msg->data.start_ok.red = raw->fields[2].data.integer;
-		msg->data.start_ok.width = raw->fields[3].data.integer;
-		msg->data.start_ok.height = raw->fields[4].data.integer;
-	} else if (strcmp(name, "start_err") == 0) {
-		if (raw->len != 2 || raw->fields[1].type != FIELD_STRING) {
-			return -1;
-		}
+		msg->data.start_ok.other = take_string(raw, 1);
+		msg->data.start_ok.red = take_integer(raw, 2);
+		msg->data.start_ok.width = take_integer(raw, 3);
+		msg->data.start_ok.height = take_integer(raw, 4);
+	} else if (match(raw, "start_err", 1, FIELD_STRING)) {
 		msg->type = MSG_LOGIN_ERR;
-		msg->data.start_err.text = raw->fields[1].data.string;
-		raw->fields[1].data.string = NULL;
+		msg->data.start_err.text = take_string(raw, 1);
 	} else {
 		return -1;
 	}
@@ -420,6 +433,24 @@ static int init_raw_message(struct raw_message *raw, size_t len)
 	return 0;
 }
 
+static void set_integer(struct raw_message *msg, size_t idx, int val)
+{
+	msg->fields[idx].type = FIELD_INTEGER;
+	msg->fields[idx].data.integer = val;
+}
+
+static void set_symbol(struct raw_message *msg, size_t idx, char *val)
+{
+	msg->fields[idx].type = FIELD_SYMBOL;
+	msg->fields[idx].data.symbol = val;
+}
+
+static void set_string(struct raw_message *msg, size_t idx, char *val)
+{
+	msg->fields[idx].type = FIELD_STRING;
+	msg->fields[idx].data.string = val;
+}
+
 static int encode_message(struct message *msg, struct raw_message *raw)
 {
 	switch (msg->type) {
@@ -427,64 +458,50 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		if (init_raw_message(raw, 1) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "invalid";
+		set_symbol(raw, 0, "invalid");
 		break;
 	case MSG_LOGIN:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "login";
-		raw->fields[1].type = FIELD_STRING;
-		raw->fields[1].data.string = msg->data.login.name;
+		set_symbol(raw, 0, "login");
+		set_string(raw, 1, msg->data.login.name);
 		break;
 	case MSG_LOGIN_OK:
 		if (init_raw_message(raw, 1) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "login_ok";
+		set_symbol(raw, 0, "login_ok");
 		break;
 	case MSG_LOGIN_ERR:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "login_err";
-		raw->fields[1].type = FIELD_STRING;
-		raw->fields[1].data.string = msg->data.login_err.text;
+		set_symbol(raw, 0, "login_err");
+		set_string(raw, 1, msg->data.login_err.text);
 		break;
 	case MSG_START:
 		if (init_raw_message(raw, 1) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "start";
+		set_symbol(raw, 0, "start");
 		break;
 	case MSG_START_OK:
 		if (init_raw_message(raw, 5) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "start_ok";
-		raw->fields[1].type = FIELD_STRING;
-		raw->fields[1].data.string = msg->data.start_ok.other;
-		raw->fields[2].type = FIELD_INTEGER;
-		raw->fields[2].data.integer = msg->data.start_ok.red;
-		raw->fields[3].type = FIELD_INTEGER;
-		raw->fields[3].data.integer = msg->data.start_ok.width;
-		raw->fields[4].type = FIELD_INTEGER;
-		raw->fields[4].data.integer = msg->data.start_ok.height;
+		set_symbol(raw, 0, "start_ok");
+		set_string(raw, 1, msg->data.start_ok.other);
+		set_integer(raw, 2, msg->data.start_ok.red);
+		set_integer(raw, 3, msg->data.start_ok.width);
+		set_integer(raw, 4, msg->data.start_ok.height);
 		break;
 	case MSG_START_ERR:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
 		}
-		raw->fields[0].type = FIELD_SYMBOL;
-		raw->fields[0].data.symbol = "start_err";
-		raw->fields[1].type = FIELD_STRING;
-		raw->fields[1].data.string = msg->data.start_err.text;
+		set_symbol(raw, 0, "start_err");
+		set_string(raw, 1, msg->data.start_err.text);
 		break;
 	default:
 		return -1;
