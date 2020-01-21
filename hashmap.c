@@ -90,6 +90,9 @@ static int hashmap_resize(struct hashmap *h, size_t size)
 	if (!tmp.buckets) {
 		return -1;
 	}
+	for (i = 0; i < tmp.nbuckets; ++i) {
+		tmp.buckets[i].taken = 0;
+	}
 	for (i = 0; i < h->nbuckets; ++i) {
 		bucket = &h->buckets[i];
 		if (bucket->taken) {
