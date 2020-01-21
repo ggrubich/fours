@@ -121,7 +121,7 @@ error:
 
 int server_init(struct server *s, int port)
 {
-	struct epoll_event event;
+	struct epoll_event event = {0};
 	s->epoll = epoll_create1(0);
 	if (s->epoll < 0) {
 		return -1;
@@ -154,7 +154,7 @@ void server_finalize(struct server *s)
 int server_accept(struct server *s)
 {
 	struct client *cli;
-	struct epoll_event event;
+	struct epoll_event event = {0};
 	int sock = accept(s->listener, NULL, NULL);
 	if (sock < 0) {
 		return -1;
@@ -194,7 +194,7 @@ int server_disconnect(struct server *s, struct client *cli)
 
 int epoll_toggle_write(int epoll, int sock, int on)
 {
-	struct epoll_event event;
+	struct epoll_event event = {0};
 	if (on) {
 		event.events = EPOLLIN | EPOLLOUT;
 	} else {
