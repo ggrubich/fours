@@ -390,6 +390,26 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	} else if (match(raw, "start_err", 1, FIELD_STRING)) {
 		msg->type = MSG_LOGIN_ERR;
 		msg->data.start_err.text = take_string(raw, 1);
+	} else if (match(raw, "drop", 1, FIELD_INTEGER)) {
+		msg->type = MSG_DROP;
+		msg->data.drop.column = take_integer(raw, 1);
+	} else if (match(raw, "drop_ok", 0)) {
+		msg->type = MSG_DROP_OK;
+	} else if (match(raw, "drop_err", 1, FIELD_STRING)) {
+		msg->type = MSG_DROP_ERR;
+		msg->data.drop_err.text = take_string(raw, 1);
+	} else if (match(raw, "notify_drop", 3,
+				FIELD_INTEGER,
+				FIELD_INTEGER,
+				FIELD_INTEGER))
+	{
+		msg->type = MSG_NOTIFY_DROP;
+		msg->data.notify_drop.red = take_integer(raw, 1);
+		msg->data.notify_drop.column = take_integer(raw, 2);
+		msg->data.notify_drop.row = take_integer(raw, 3);
+	} else if (match(raw, "notify_over", 1, FIELD_INTEGER)) {
+		msg->type = MSG_NOTIFY_OVER;
+		msg->data.notify_over.red = take_integer(raw, 1);
 	} else {
 		return -1;
 	}
@@ -502,6 +522,42 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		}
 		set_symbol(raw, 0, "start_err");
 		set_string(raw, 1, msg->data.start_err.text);
+		break;
+	case MSG_DROP:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "drop");
+		set_integer(raw, 1, msg->data.drop.column);
+		break;
+	case MSG_DROP_OK:
+		if (init_raw_message(raw, 1) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "drop_ok");
+		break;
+	case MSG_DROP_ERR:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "drop_err");
+		set_string(raw, 1, msg->data.drop_err.text);
+		break;
+	case MSG_NOTIFY_DROP:
+		if (init_raw_message(raw, 4) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "notify_drop");
+		set_integer(raw, 1, msg->data.notify_drop.red);
+		set_integer(raw, 2, msg->data.notify_drop.column);
+		set_integer(raw, 3, msg->data.notify_drop.row);
+		break;
+	case MSG_NOTIFY_OVER:
+		if (init_raw_message(raw, 2) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "notify_over");
+		set_integer(raw, 1, msg->data.notify_drop.red);
 		break;
 	default:
 		return -1;

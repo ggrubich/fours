@@ -12,6 +12,11 @@ enum message_type {
 	MSG_START,
 	MSG_START_OK,
 	MSG_START_ERR,
+	MSG_DROP,
+	MSG_DROP_OK,
+	MSG_DROP_ERR,
+	MSG_NOTIFY_DROP,
+	MSG_NOTIFY_OVER,
 };
 
 struct message {
@@ -32,6 +37,20 @@ struct message {
 		struct {
 			char *text;
 		} start_err;
+		struct {
+			int column;
+		} drop;
+		struct {
+			char *text;
+		} drop_err;
+		struct {
+			int red;
+			int column;
+			int row;
+		} notify_drop;
+		struct {
+			int red;
+		} notify_over;
 	} data;
 };
 

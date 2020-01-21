@@ -11,13 +11,18 @@
 #include "hashmap.h"
 #include "buffer.h"
 #include "protocol.h"
+#include "game.h"
 
 #define MAX_READ 64
 #define MAX_WRITE 64
 
+#define GRID_WIDTH 7
+#define GRID_HEIGHT 6
+
 struct pair {
 	struct client *red;
 	struct client *blue;
+	struct game game;
 };
 
 struct client {
@@ -30,7 +35,7 @@ struct client {
 	struct buffer output;
 };
 
-struct pair *pair_new(struct client *red, struct client *blue)
+struct pair *pair_new(struct client *red, struct client *blue, int width, int height)
 {
 	struct pair *pair = malloc(sizeof(*pair));
 	if (!pair) {
@@ -38,6 +43,7 @@ struct pair *pair_new(struct client *red, struct client *blue)
 	}
 	pair->red = red;
 	pair->blue = blue;
+	game_init(&pair->game, width, height);
 	red->pair = pair;
 	blue->pair = pair;
 	return pair;
@@ -47,6 +53,7 @@ void pair_free(struct pair *pair)
 {
 	pair->red->pair = NULL;
 	pair->blue->pair = NULL;
+	game_finalize(&pair->game);
 	free(pair);
 }
 
@@ -249,9 +256,8 @@ int respond_start_ok(struct server *s, struct client *cli)
 	struct client *other = red ? cli->pair->blue : cli->pair->red;
 	resp.data.start_ok.other = other->name;
 	resp.data.start_ok.red = red;
-	// TODO placeholder values, do something
-	resp.data.start_ok.width = 12;
-	resp.data.start_ok.height = 34;
+	resp.data.start_ok.width = cli->pair->game.width;
+	resp.data.start_ok.height = cli->pair->game.height;
 	return respond(s, cli, &resp);
 }
 
@@ -279,7 +285,7 @@ int handle_start(struct server *s, struct client *cli)
 		s->waiting_client = cli->sock;
 		return 0;
 	}
-	pair = pair_new(cli, other);
+	pair = pair_new(cli, other, GRID_WIDTH, GRID_HEIGHT);
 	if (!pair) {
 		return -1;
 	}
@@ -293,6 +299,53 @@ int handle_start(struct server *s, struct client *cli)
 	return 0;
 }
 
+int handle_drop(struct server *s, struct client *cli, int column)
+{
+	struct message resp;
+	struct game *game;
+	int row;
+	int color;
+	struct client *other;
+	if (!cli->pair) {
+		resp.type = MSG_DROP_ERR;
+		resp.data.drop_err.text = "not in game right now";
+		return respond(s, cli, &resp);
+	}
+	game = &cli->pair->game;
+	color = cli == cli->pair->red ? GAME_RED : GAME_BLUE;
+	if ((row = game_drop(game, color, column)) < 0) {
+		resp.type = MSG_DROP_ERR;
+		resp.data.drop_err.text = "can't drop here and now";
+		return respond(s, cli, &resp);
+	}
+	resp.type = MSG_DROP_OK;
+	if (respond(s, cli, &resp) < 0) {
+		return -1;
+	}
+	other = cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+	resp.type = MSG_NOTIFY_DROP;
+	resp.data.notify_drop.red = color;
+	resp.data.notify_drop.column = column;
+	resp.data.notify_drop.row = row;
+	if (respond(s, cli, &resp) < 0) {
+		return -1;
+	}
+	if (respond(s, other, &resp) < 0) {
+		return -1;
+	}
+	if (game->over) {
+		resp.type = MSG_NOTIFY_OVER;
+		resp.data.notify_over.red = color;
+		if (respond(s, cli, &resp) < 0) {
+			return -1;
+		}
+		if (respond(s, other, &resp) < 0) {
+			return -1;
+		}
+	}
+	return 0;
+}
+
 int handle_message(struct server *s, struct client *cli, struct message *msg)
 {
 	struct message resp;
@@ -301,6 +354,8 @@ int handle_message(struct server *s, struct client *cli, struct message *msg)
 		return handle_login(s, cli, msg->data.login.name);
 	case MSG_START:
 		return handle_start(s, cli);
+	case MSG_DROP:
+		return handle_drop(s, cli, msg->data.drop.column);
 	default:
 		resp.type = MSG_INVALID;
 		return respond(s, cli, &resp);
