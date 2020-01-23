@@ -252,7 +252,11 @@ int handle_login(struct server *s, struct client *cli, char *name)
 		free(name2);
 		return -1;
 	}
-	hashmap_insert(&s->fds_by_name, (void *)name1, (void *)(intptr_t)cli->sock);
+	if (hashmap_insert(&s->fds_by_name, (void *)name1, (void *)(intptr_t)cli->sock) < 0) {
+		free(name1);
+		free(name2);
+		return -1;
+	}
 	cli->name = name2;
 	return respond_nullary(s, cli, MSG_LOGIN_OK);
 }
