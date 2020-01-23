@@ -344,6 +344,26 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	return 0;
 }
 
+int handle_quit(struct server *s, struct client *cli)
+{
+	struct client *other;
+	if (cli->pair) {
+		other = cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+		pair_free(cli->pair);
+		if (respond_nullary(s, other, MSG_NOTIFY_QUIT) < 0) {
+			return -1;
+		}
+	} else if (s->waiting_client == cli->sock) {
+		s->waiting_client = -1;
+	} else {
+		return respond_err(s, cli, MSG_QUIT_ERR, "not in game or queue now");
+	}
+	if (respond_nullary(s, cli, MSG_QUIT_OK) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
 int handle_message(struct server *s, struct client *cli, struct message *msg)
 {
 	struct message resp;
@@ -354,6 +374,8 @@ int handle_message(struct server *s, struct client *cli, struct message *msg)
 		return handle_start(s, cli);
 	case MSG_DROP:
 		return handle_drop(s, cli, msg->data.drop.column);
+	case MSG_QUIT:
+		return handle_quit(s, cli);
 	default:
 		resp.type = MSG_INVALID;
 		return respond(s, cli, &resp);

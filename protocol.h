@@ -19,8 +19,13 @@ enum message_type {
 	MSG_DROP_OK,
 	MSG_DROP_ERR,
 
+	MSG_QUIT,
+	MSG_QUIT_OK,
+	MSG_QUIT_ERR,
+
 	MSG_NOTIFY_DROP,
 	MSG_NOTIFY_OVER,
+	MSG_NOTIFY_QUIT,
 };
 
 struct message {

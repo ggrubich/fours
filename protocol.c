@@ -301,6 +301,7 @@ void close_message(struct message *msg)
 	case MSG_LOGIN_ERR:
 	case MSG_START_ERR:
 	case MSG_DROP_ERR:
+	case MSG_QUIT_ERR:
 		free(msg->data.err.text);
 		break;
 	case MSG_LOGIN:
@@ -413,6 +414,9 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	}
 	else if (decode_nullary(raw, "drop_ok", MSG_DROP_OK, msg)) {}
 	else if (decode_err(raw, "drop_err", MSG_DROP_ERR, msg)) {}
+	else if (decode_nullary(raw, "quit", MSG_QUIT, msg)) {}
+	else if (decode_nullary(raw, "quit_ok", MSG_QUIT_OK, msg)) {}
+	else if (decode_err(raw, "quit_err", MSG_QUIT_ERR, msg)) {}
 	else if (match(raw, "notify_drop", 3,
 				FIELD_INTEGER,
 				FIELD_INTEGER,
@@ -427,6 +431,7 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		msg->type = MSG_NOTIFY_OVER;
 		msg->data.notify_over.red = take_integer(raw, 1);
 	}
+	else if (decode_nullary(raw, "notify_quit", MSG_NOTIFY_QUIT, msg)) {}
 	else {
 		return -1;
 	}
@@ -548,6 +553,12 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		return encode_nullary("drop_ok", raw);
 	case MSG_DROP_ERR:
 		return encode_err("drop_err", msg, raw);
+	case MSG_QUIT:
+		return encode_nullary("quit", raw);
+	case MSG_QUIT_OK:
+		return encode_nullary("quit_ok", raw);
+	case MSG_QUIT_ERR:
+		return encode_err("quit_err", msg, raw);
 	case MSG_NOTIFY_DROP:
 		if (init_raw_message(raw, 4) < 0) {
 			return -1;
@@ -564,6 +575,8 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_symbol(raw, 0, "notify_over");
 		set_integer(raw, 1, msg->data.notify_drop.red);
 		break;
+	case MSG_NOTIFY_QUIT:
+		return encode_nullary("notify_quit", raw);
 	default:
 		return -1;
 	}
