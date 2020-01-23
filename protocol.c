@@ -298,17 +298,16 @@ static int format_raw_message(struct raw_message *msg, struct buffer *buf)
 void close_message(struct message *msg)
 {
 	switch (msg->type) {
+	case MSG_LOGIN_ERR:
+	case MSG_START_ERR:
+	case MSG_DROP_ERR:
+		free(msg->data.err.text);
+		break;
 	case MSG_LOGIN:
 		free(msg->data.login.name);
 		break;
-	case MSG_LOGIN_ERR:
-		free(msg->data.login_err.text);
-		break;
 	case MSG_START_OK:
 		free(msg->data.start_ok.other);
-		break;
-	case MSG_START_ERR:
-		free(msg->data.start_err.text);
 		break;
 	default:
 		break;
@@ -362,21 +361,40 @@ static char *take_string(struct raw_message *raw, size_t idx)
 	return val;
 }
 
+static int decode_nullary(struct raw_message *raw, char *name,
+		enum message_type type, struct message *msg)
+{
+	if (match(raw, name, 0)) {
+		msg->type = type;
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+static int decode_err(struct raw_message *raw, char *name,
+		enum message_type type, struct message *msg)
+{
+	if (match(raw, name, 1, FIELD_STRING)) {
+		msg->type = type;
+		msg->data.err.text = take_string(raw, 1);
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
 static int decode_message(struct raw_message *raw, struct message *msg)
 {
-	if (match(raw, "invalid", 0)) {
-		msg->type = MSG_INVALID;
-	} else if (match(raw, "login", 1, FIELD_STRING)) {
+	if (decode_nullary(raw, "invalid", MSG_INVALID, msg)) {}
+	else if (match(raw, "login", 1, FIELD_STRING)) {
 		msg->type = MSG_LOGIN;
 		msg->data.login.name = take_string(raw, 1);
-	} else if (match(raw, "login_ok", 0)) {
-		msg->type = MSG_LOGIN_OK;
-	} else if (match(raw, "login_err", 1, FIELD_STRING)) {
-		msg->type = MSG_LOGIN_ERR;
-		msg->data.login_err.text = take_string(raw, 1);
-	} else if (match(raw, "start", 0)) {
-		msg->type = MSG_START;
-	} else if (match(raw, "start_ok", 4,
+	}
+	else if (decode_nullary(raw, "login_ok", MSG_LOGIN_OK, msg)) {}
+	else if (decode_err(raw, "login_err", MSG_LOGIN_ERR, msg)) {}
+	else if (decode_nullary(raw, "start", MSG_START, msg)) {}
+	else if (match(raw, "start_ok", 4,
 				FIELD_STRING,
 				FIELD_INTEGER,
 				FIELD_INTEGER,
@@ -387,18 +405,15 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		msg->data.start_ok.red = take_integer(raw, 2);
 		msg->data.start_ok.width = take_integer(raw, 3);
 		msg->data.start_ok.height = take_integer(raw, 4);
-	} else if (match(raw, "start_err", 1, FIELD_STRING)) {
-		msg->type = MSG_LOGIN_ERR;
-		msg->data.start_err.text = take_string(raw, 1);
-	} else if (match(raw, "drop", 1, FIELD_INTEGER)) {
+	}
+	else if (decode_err(raw, "start_err", MSG_START_ERR, msg)) {}
+	else if (match(raw, "drop", 1, FIELD_INTEGER)) {
 		msg->type = MSG_DROP;
 		msg->data.drop.column = take_integer(raw, 1);
-	} else if (match(raw, "drop_ok", 0)) {
-		msg->type = MSG_DROP_OK;
-	} else if (match(raw, "drop_err", 1, FIELD_STRING)) {
-		msg->type = MSG_DROP_ERR;
-		msg->data.drop_err.text = take_string(raw, 1);
-	} else if (match(raw, "notify_drop", 3,
+	}
+	else if (decode_nullary(raw, "drop_ok", MSG_DROP_OK, msg)) {}
+	else if (decode_err(raw, "drop_err", MSG_DROP_ERR, msg)) {}
+	else if (match(raw, "notify_drop", 3,
 				FIELD_INTEGER,
 				FIELD_INTEGER,
 				FIELD_INTEGER))
@@ -407,10 +422,12 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		msg->data.notify_drop.red = take_integer(raw, 1);
 		msg->data.notify_drop.column = take_integer(raw, 2);
 		msg->data.notify_drop.row = take_integer(raw, 3);
-	} else if (match(raw, "notify_over", 1, FIELD_INTEGER)) {
+	}
+	else if (match(raw, "notify_over", 1, FIELD_INTEGER)) {
 		msg->type = MSG_NOTIFY_OVER;
 		msg->data.notify_over.red = take_integer(raw, 1);
-	} else {
+	}
+	else {
 		return -1;
 	}
 	return 0;
@@ -471,15 +488,30 @@ static void set_string(struct raw_message *msg, size_t idx, char *val)
 	msg->fields[idx].data.string = val;
 }
 
+static int encode_nullary(char *name, struct raw_message *raw)
+{
+	if (init_raw_message(raw, 1) < 0) {
+		return -1;
+	}
+	set_symbol(raw, 0, name);
+	return 0;
+}
+
+static int encode_err(char *name, struct message *msg, struct raw_message *raw)
+{
+	if (init_raw_message(raw, 2) < 0) {
+		return -1;
+	}
+	set_symbol(raw, 0, name);
+	set_string(raw, 1, msg->data.err.text);
+	return 0;
+}
+
 static int encode_message(struct message *msg, struct raw_message *raw)
 {
 	switch (msg->type) {
 	case MSG_INVALID:
-		if (init_raw_message(raw, 1) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "invalid");
-		break;
+		return encode_nullary("invalid", raw);
 	case MSG_LOGIN:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
@@ -488,24 +520,11 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_string(raw, 1, msg->data.login.name);
 		break;
 	case MSG_LOGIN_OK:
-		if (init_raw_message(raw, 1) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "login_ok");
-		break;
+		return encode_nullary("login_ok", raw);
 	case MSG_LOGIN_ERR:
-		if (init_raw_message(raw, 2) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "login_err");
-		set_string(raw, 1, msg->data.login_err.text);
-		break;
+		return encode_err("login_err", msg, raw);
 	case MSG_START:
-		if (init_raw_message(raw, 1) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "start");
-		break;
+		return encode_nullary("start", raw);
 	case MSG_START_OK:
 		if (init_raw_message(raw, 5) < 0) {
 			return -1;
@@ -517,12 +536,7 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_integer(raw, 4, msg->data.start_ok.height);
 		break;
 	case MSG_START_ERR:
-		if (init_raw_message(raw, 2) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "start_err");
-		set_string(raw, 1, msg->data.start_err.text);
-		break;
+		return encode_err("start_err", msg, raw);
 	case MSG_DROP:
 		if (init_raw_message(raw, 2) < 0) {
 			return -1;
@@ -531,18 +545,9 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_integer(raw, 1, msg->data.drop.column);
 		break;
 	case MSG_DROP_OK:
-		if (init_raw_message(raw, 1) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "drop_ok");
-		break;
+		return encode_nullary("drop_ok", raw);
 	case MSG_DROP_ERR:
-		if (init_raw_message(raw, 2) < 0) {
-			return -1;
-		}
-		set_symbol(raw, 0, "drop_err");
-		set_string(raw, 1, msg->data.drop_err.text);
-		break;
+		return encode_err("drop_err", msg, raw);
 	case MSG_NOTIFY_DROP:
 		if (init_raw_message(raw, 4) < 0) {
 			return -1;

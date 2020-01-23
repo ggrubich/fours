@@ -6,15 +6,19 @@
 
 enum message_type {
 	MSG_INVALID,
+
 	MSG_LOGIN,
 	MSG_LOGIN_OK,
 	MSG_LOGIN_ERR,
+
 	MSG_START,
 	MSG_START_OK,
 	MSG_START_ERR,
+
 	MSG_DROP,
 	MSG_DROP_OK,
 	MSG_DROP_ERR,
+
 	MSG_NOTIFY_DROP,
 	MSG_NOTIFY_OVER,
 };
@@ -23,26 +27,24 @@ struct message {
 	enum message_type type;
 	union {
 		struct {
+			char *text;
+		} err;
+
+		struct {
 			char *name;
 		} login;
-		struct {
-			char *text;
-		} login_err;
+
 		struct {
 			char *other;
 			int red;
 			int width;
 			int height;
 		} start_ok;
-		struct {
-			char *text;
-		} start_err;
+
 		struct {
 			int column;
 		} drop;
-		struct {
-			char *text;
-		} drop_err;
+
 		struct {
 			int red;
 			int column;

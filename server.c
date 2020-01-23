@@ -221,19 +221,29 @@ int respond(struct server *s, struct client *cli, struct message *msg)
 	return format_message(msg, &cli->output);
 }
 
+int respond_nullary(struct server *s, struct client *cli, enum message_type type)
+{
+	struct message resp;
+	resp.type = type;
+	return respond(s, cli, &resp);
+}
+
+int respond_err(struct server *s, struct client *cli, enum message_type type, char *text)
+{
+	struct message resp;
+	resp.type = type;
+	resp.data.err.text = text;
+	return respond(s, cli, &resp);
+}
+
 int handle_login(struct server *s, struct client *cli, char *name)
 {
 	char *name1, *name2;
-	struct message resp;
 	if (cli->name) {
-		resp.type = MSG_LOGIN_ERR;
-		resp.data.login_err.text = "user already logged in";
-		return respond(s, cli, &resp);
+		return respond_err(s, cli, MSG_LOGIN_ERR, "user already logged in");
 	}
 	if (hashmap_contains(&s->fds_by_name, (void *)name)) {
-		resp.type = MSG_LOGIN_ERR;
-		resp.data.login_err.text = "name already taken";
-		return respond(s, cli, &resp);
+		return respond_err(s, cli, MSG_LOGIN_ERR, "name already taken");
 	}
 	name1 = strdup(name);
 	name2 = strdup(name);
@@ -244,8 +254,7 @@ int handle_login(struct server *s, struct client *cli, char *name)
 	}
 	hashmap_insert(&s->fds_by_name, (void *)name1, (void *)(intptr_t)cli->sock);
 	cli->name = name2;
-	resp.type = MSG_LOGIN_OK;
-	return respond(s, cli, &resp);
+	return respond_nullary(s, cli, MSG_LOGIN_OK);
 }
 
 int respond_start_ok(struct server *s, struct client *cli)
@@ -263,20 +272,14 @@ int respond_start_ok(struct server *s, struct client *cli)
 
 int handle_start(struct server *s, struct client *cli)
 {
-	struct message resp;
 	struct client *other;
 	struct pair *pair;
-	resp.type = MSG_START_ERR;
-	resp.data.start_err.text = NULL;
 	if (!cli->name) {
-		resp.data.start_err.text = "not logged in";
+		return respond_err(s, cli, MSG_START_ERR, "not logged in");
 	} else if (cli->pair) {
-		resp.data.start_err.text = "already in a game";
+		return respond_err(s, cli, MSG_START_ERR, "already in a game");
 	} else if (s->waiting_client == cli->sock) {
-		resp.data.start_err.text = "already waiting for a game";
-	}
-	if (resp.data.start_err.text) {
-		return respond(s, cli, &resp);
+		return respond_err(s, cli, MSG_START_ERR, "already waiting for a game");
 	}
 	if (hashmap_get(&s->clients_by_fd,
 			(void *)(uintptr_t)s->waiting_client,
@@ -307,19 +310,14 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	int color;
 	struct client *other;
 	if (!cli->pair) {
-		resp.type = MSG_DROP_ERR;
-		resp.data.drop_err.text = "not in game right now";
-		return respond(s, cli, &resp);
+		return respond_err(s, cli, MSG_DROP_ERR, "not in game right now");
 	}
 	game = &cli->pair->game;
 	color = cli == cli->pair->red ? GAME_RED : GAME_BLUE;
 	if ((row = game_drop(game, color, column)) < 0) {
-		resp.type = MSG_DROP_ERR;
-		resp.data.drop_err.text = "can't drop here and now";
-		return respond(s, cli, &resp);
+		return respond_err(s, cli, MSG_DROP_ERR, "can't drop here and now");
 	}
-	resp.type = MSG_DROP_OK;
-	if (respond(s, cli, &resp) < 0) {
+	if (respond_nullary(s, cli, MSG_DROP_OK) < 0) {
 		return -1;
 	}
 	other = cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
