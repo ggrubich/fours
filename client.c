@@ -13,6 +13,8 @@
 
 #define BUF_SIZE 512
 
+#define KEY_ESC 27
+
 enum {
 	RES_OK = 0,
 	RES_ERR = -1,
@@ -39,6 +41,10 @@ enum client_state {
 	STATE_LOGIN_WAIT,
 	STATE_LOGIN_ERR,
 	STATE_LOBBY,
+	STATE_START_WAIT,
+	STATE_GAME,
+	STATE_GAME_QUIT,
+	STATE_HALTED,
 };
 
 const char *LOBBY[] = {"START", "QUIT"};
@@ -47,6 +53,14 @@ enum {
 	LOBBY_START,
 	LOBBY_QUIT,
 	LOBBY_LEN,
+};
+
+const char *GAME_QUIT[] = {"YES", "NO"};
+
+enum {
+	GAME_QUIT_YES,
+	GAME_QUIT_NO,
+	GAME_QUIT_LEN,
 };
 
 struct client {
@@ -61,9 +75,14 @@ struct client {
 	enum client_state state;
 	union {
 		char *login_err;
+
 		struct {
 			int index;
 		} lobby;
+
+		struct {
+			int index;
+		} game_quit;
 	} data;
 };
 
@@ -155,6 +174,13 @@ void client_finalize(struct client *c)
 	}
 }
 
+int goto_lobby(struct client *c)
+{
+	c->state = STATE_LOBBY;
+	c->data.lobby.index = 0;
+	return RES_OK;
+}
+
 int handle_login_wait(struct client *c, struct event *ev)
 {
 	struct message *msg;
@@ -162,9 +188,7 @@ int handle_login_wait(struct client *c, struct event *ev)
 		msg = ev->data.msg;
 		switch (msg->type) {
 		case MSG_LOGIN_OK:
-			c->state = STATE_LOBBY;
-			c->data.lobby.index = 0;
-			break;
+			return goto_lobby(c);
 		case MSG_LOGIN_ERR:
 			c->state = STATE_LOGIN_ERR;
 			c->data.login_err = strdup(msg->data.err.text);
@@ -195,6 +219,8 @@ int handle_login_err(struct client *c, struct event *ev)
 
 int handle_lobby(struct client *c, struct event *ev)
 {
+	struct message req;
+	int res;
 	if (ev->type == EVENT_INPUT) {
 		switch (ev->data.ch) {
 		case KEY_UP:
@@ -210,6 +236,13 @@ int handle_lobby(struct client *c, struct event *ev)
 		case KEY_ENTER:
 		case '\n':
 			switch (c->data.lobby.index) {
+			case LOBBY_START:
+				req.type = MSG_START;
+				if ((res = request(c, &req)) < 0) {
+					return res;
+				}
+				c->state = STATE_START_WAIT;
+				break;
 			case LOBBY_QUIT:
 				return RES_QUIT;
 			default:
@@ -218,6 +251,109 @@ int handle_lobby(struct client *c, struct event *ev)
 		default:
 			break;
 		}
+	}
+	return RES_OK;
+}
+
+int handle_start_wait(struct client *c, struct event *ev)
+{
+	struct message req;
+	struct message *msg;
+	int res;
+	if (ev->type == EVENT_INPUT && (ev->data.ch == KEY_ENTER || ev->data.ch == '\n')) {
+		req.type = MSG_QUIT;
+		if ((res =  request(c, &req)) < 0) {
+			return res;
+		}
+		return goto_lobby(c);
+	} else if (ev->type == EVENT_MSG) {
+		msg = ev->data.msg;
+		switch (msg->type) {
+		case MSG_START_ERR:
+			// should not happen anyway
+			return RES_INVALID_MSG;
+		case MSG_START_OK:
+			c->state = STATE_GAME;
+			break;
+		default:
+			break;
+		}
+	}
+	return RES_OK;
+}
+
+int handle_game(struct client *c, struct event *ev)
+{
+	struct message *msg;
+	if (ev->type == EVENT_INPUT) {
+		switch (ev->data.ch) {
+		case KEY_ESC:
+			c->state = STATE_GAME_QUIT;
+			c->data.game_quit.index = 0;
+			break;
+		default:
+			break;
+		}
+	} else if (ev->type == EVENT_MSG) {
+		msg = ev->data.msg;
+		switch (msg->type) {
+		case MSG_NOTIFY_QUIT:
+			c->state = STATE_HALTED;
+			break;
+		default:
+			break;
+		}
+	}
+	return RES_OK;
+}
+
+int handle_game_quit(struct client *c, struct event *ev)
+{
+	struct message *msg;
+	struct message req;
+	int res;
+	if (ev->type == EVENT_INPUT) {
+		switch (ev->data.ch) {
+		case KEY_UP:
+			if (c->data.game_quit.index != 0) {
+				--c->data.game_quit.index;
+			}
+			break;
+		case KEY_DOWN:
+			if (c->data.game_quit.index < GAME_QUIT_LEN) {
+				++c->data.game_quit.index;
+			}
+			break;
+		case KEY_ENTER:
+		case '\n':
+			if (c->data.game_quit.index == GAME_QUIT_YES) {
+				req.type = MSG_QUIT;
+				if ((res = request(c, &req)) < 0) {
+					return res;
+				}
+				goto_lobby(c);
+			} else {
+				c->state = STATE_GAME;
+			}
+			break;
+		}
+	} else if (ev->type == EVENT_MSG) {
+		msg = ev->data.msg;
+		switch (msg->type) {
+		case MSG_NOTIFY_QUIT:
+			c->state = STATE_HALTED;
+			break;
+		default:
+			break;
+		}
+	}
+	return RES_OK;
+}
+
+int handle_halted(struct client *c, struct event *ev)
+{
+	if (ev->type == EVENT_INPUT && (ev->data.ch == KEY_ENTER || ev->data.ch == '\n')) {
+		goto_lobby(c);
 	}
 	return RES_OK;
 }
@@ -231,6 +367,14 @@ int handle(struct client *c, struct event *ev)
 		return handle_login_err(c, ev);
 	case STATE_LOBBY:
 		return handle_lobby(c, ev);
+	case STATE_START_WAIT:
+		return handle_start_wait(c, ev);
+	case STATE_GAME:
+		return handle_game(c, ev);
+	case STATE_GAME_QUIT:
+		return handle_game_quit(c, ev);
+	case STATE_HALTED:
+		return handle_halted(c, ev);
 	}
 	return RES_OK;
 }
@@ -372,6 +516,42 @@ int render_lobby(struct client *c)
 	return RES_OK;
 }
 
+int render_start_wait(struct client *c)
+{
+	char *choices[] = {"CANCEL"};
+	render_dialog("Starting...",
+			"Waiting for the second player to join",
+			(const char **)choices,
+			1,
+			0);
+	return RES_OK;
+}
+
+int render_game(struct client *c)
+{
+	// TODO game
+	move(0, 0);
+	printw("game should be here");
+	return RES_OK;
+}
+
+int render_game_quit(struct client *c)
+{
+	render_dialog("Quit",
+			"Do you really want to quit the game?",
+			GAME_QUIT,
+			GAME_QUIT_LEN,
+			c->data.game_quit.index);
+	return RES_OK;
+}
+
+int render_halted(struct client *c)
+{
+	char *choices[] = {"BACK TO MENU"};
+	render_dialog("Error", "Other player quit the game", (const char **)choices, 1, 0);
+	return RES_OK;
+}
+
 int render(struct client *c)
 {
 	switch (c->state) {
@@ -381,6 +561,14 @@ int render(struct client *c)
 		return render_login_err(c);
 	case STATE_LOBBY:
 		return render_lobby(c);
+	case STATE_START_WAIT:
+		return render_start_wait(c);
+	case STATE_GAME:
+		return render_game(c);
+	case STATE_GAME_QUIT:
+		return render_game_quit(c);
+	case STATE_HALTED:
+		return render_halted(c);
 	}
 	return RES_OK;
 }
