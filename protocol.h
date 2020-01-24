@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #include "buffer.h"
+#include "side.h"
 
 enum message_type {
 	MSG_INVALID,
@@ -41,7 +42,7 @@ struct message {
 
 		struct {
 			char *other;
-			int red;
+			enum side side;
 			int width;
 			int height;
 		} start_ok;
@@ -51,12 +52,12 @@ struct message {
 		} drop;
 
 		struct {
-			int red;
+			enum side side;
 			int column;
 			int row;
 		} notify_drop;
 		struct {
-			int red;
+			enum side winner;
 		} notify_over;
 	} data;
 };

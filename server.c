@@ -11,6 +11,7 @@
 #include "hashmap.h"
 #include "buffer.h"
 #include "protocol.h"
+#include "side.h"
 #include "game.h"
 
 #define MAX_READ 64
@@ -94,6 +95,11 @@ struct client *client_other(struct client *cli)
 		return NULL;
 	}
 	return cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+}
+
+enum side client_side(struct client *cli)
+{
+	return cli == cli->pair->red ? SIDE_RED : SIDE_BLUE;
 }
 
 struct server {
@@ -279,7 +285,7 @@ int respond_start_ok(struct server *s, struct client *cli)
 	struct message resp;
 	resp.type = MSG_START_OK;
 	resp.data.start_ok.other = client_other(cli)->name;
-	resp.data.start_ok.red = cli == cli->pair->red;
+	resp.data.start_ok.side = client_side(cli);
 	resp.data.start_ok.width = cli->pair->game.width;
 	resp.data.start_ok.height = cli->pair->game.height;
 	return respond(s, cli, &resp);
@@ -322,14 +328,14 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	struct message resp;
 	struct game *game;
 	int row;
-	int color;
+	enum side side;
 	struct client *other;
 	if (!cli->pair) {
 		return respond_err(s, cli, MSG_DROP_ERR, "not in game right now");
 	}
 	game = &cli->pair->game;
-	color = cli == cli->pair->red ? GAME_RED : GAME_BLUE;
-	if ((row = game_drop(game, color, column)) < 0) {
+	side = client_side(cli);
+	if ((row = game_drop(game, side, column)) < 0) {
 		return respond_err(s, cli, MSG_DROP_ERR, "can't drop here and now");
 	}
 	if (respond_nullary(s, cli, MSG_DROP_OK) < 0) {
@@ -337,7 +343,7 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	}
 	other = client_other(cli);
 	resp.type = MSG_NOTIFY_DROP;
-	resp.data.notify_drop.red = color;
+	resp.data.notify_drop.side = side;
 	resp.data.notify_drop.column = column;
 	resp.data.notify_drop.row = row;
 	if (respond(s, cli, &resp) < 0) {
@@ -348,7 +354,7 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	}
 	if (game->over) {
 		resp.type = MSG_NOTIFY_OVER;
-		resp.data.notify_over.red = color;
+		resp.data.notify_over.winner = side;
 		if (respond(s, cli, &resp) < 0) {
 			return -1;
 		}

@@ -403,7 +403,7 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	{
 		msg->type = MSG_START_OK;
 		msg->data.start_ok.other = take_string(raw, 1);
-		msg->data.start_ok.red = take_integer(raw, 2);
+		msg->data.start_ok.side = take_integer(raw, 2);
 		msg->data.start_ok.width = take_integer(raw, 3);
 		msg->data.start_ok.height = take_integer(raw, 4);
 	}
@@ -423,13 +423,13 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 				FIELD_INTEGER))
 	{
 		msg->type = MSG_NOTIFY_DROP;
-		msg->data.notify_drop.red = take_integer(raw, 1);
+		msg->data.notify_drop.side = take_integer(raw, 1);
 		msg->data.notify_drop.column = take_integer(raw, 2);
 		msg->data.notify_drop.row = take_integer(raw, 3);
 	}
 	else if (match(raw, "notify_over", 1, FIELD_INTEGER)) {
 		msg->type = MSG_NOTIFY_OVER;
-		msg->data.notify_over.red = take_integer(raw, 1);
+		msg->data.notify_over.winner = take_integer(raw, 1);
 	}
 	else if (decode_nullary(raw, "notify_quit", MSG_NOTIFY_QUIT, msg)) {}
 	else {
@@ -536,7 +536,7 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		}
 		set_symbol(raw, 0, "start_ok");
 		set_string(raw, 1, msg->data.start_ok.other);
-		set_integer(raw, 2, msg->data.start_ok.red);
+		set_integer(raw, 2, msg->data.start_ok.side);
 		set_integer(raw, 3, msg->data.start_ok.width);
 		set_integer(raw, 4, msg->data.start_ok.height);
 		break;
@@ -564,7 +564,7 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 			return -1;
 		}
 		set_symbol(raw, 0, "notify_drop");
-		set_integer(raw, 1, msg->data.notify_drop.red);
+		set_integer(raw, 1, msg->data.notify_drop.side);
 		set_integer(raw, 2, msg->data.notify_drop.column);
 		set_integer(raw, 3, msg->data.notify_drop.row);
 		break;
@@ -573,7 +573,7 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 			return -1;
 		}
 		set_symbol(raw, 0, "notify_over");
-		set_integer(raw, 1, msg->data.notify_drop.red);
+		set_integer(raw, 1, msg->data.notify_over.winner);
 		break;
 	case MSG_NOTIFY_QUIT:
 		return encode_nullary("notify_quit", raw);

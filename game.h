@@ -1,23 +1,19 @@
 #pragma once
 
-enum {
-	GAME_NONE = -1,
-	GAME_BLUE = 0,
-	GAME_RED = 1,
-};
+#include "side.h"
 
 struct game {
-	int **fields;
+	enum side **fields;
 	int width;
 	int height;
 
-	int turn;
+	enum side turn;
 	int over;
-	int winner;
+	enum side winner;
 };
 
 int game_init(struct game *g, int width, int height);
 
 void game_finalize(struct game *g);
 
-int game_drop(struct game *g, int color, int x);
+int game_drop(struct game *g, enum side side, int x);

@@ -10,9 +10,9 @@ int game_init(struct game *g, int width, int height)
 	g->fields = malloc(width * sizeof(*g->fields));
 	g->width = width;
 	g->height = height;
-	g->turn = GAME_RED;
+	g->turn = SIDE_RED;
 	g->over = 0;
-	g->winner = GAME_NONE;
+	g->winner = SIDE_NONE;
 	if (!g->fields) {
 		return -1;
 	}
@@ -27,7 +27,7 @@ int game_init(struct game *g, int width, int height)
 			return -1;
 		}
 		for (y = 0; y < height; ++y) {
-			g->fields[x][y] = GAME_NONE;
+			g->fields[x][y] = SIDE_NONE;
 		}
 	}
 	return 0;
@@ -82,25 +82,25 @@ static int is_connected(struct game *g, int x, int y)
 	return 0;
 }
 
-int game_drop(struct game *g, int color, int x)
+int game_drop(struct game *g, enum side side, int x)
 {
 	int y;
-	if (g->over || g->turn != color || x < 0 || x >= g->width) {
+	if (g->over || g->turn != side || x < 0 || x >= g->width) {
 		return -1;
 	}
 	for (y = 0; y < g->height; ++y) {
-		if (g->fields[x][y] == GAME_NONE) {
+		if (g->fields[x][y] == SIDE_NONE) {
 			break;
 		}
 	}
 	if (y >= g->height) {
 		return -1;
 	}
-	g->fields[x][y] = color;
-	g->turn = color == GAME_RED ? GAME_BLUE : GAME_RED;
+	g->fields[x][y] = side;
+	g->turn = side == SIDE_RED ? SIDE_BLUE : SIDE_RED;
 	if (is_connected(g, x, y)) {
 		g->over = 1;
-		g->winner = color;
+		g->winner = side;
 	}
 	return y;
 }
