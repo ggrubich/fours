@@ -166,6 +166,43 @@ void server_finalize(struct server *s)
 	hashmap_finalize(&s->fds_by_name);
 }
 
+int epoll_toggle_write(int epoll, int sock, int on)
+{
+	struct epoll_event event = {0};
+	if (on) {
+		event.events = EPOLLIN | EPOLLOUT;
+	} else {
+		event.events = EPOLLIN;
+	}
+	event.data.fd = sock;
+	return epoll_ctl(epoll, EPOLL_CTL_MOD, sock, &event);
+}
+
+int respond(struct server *s, struct client *cli, struct message *msg)
+{
+	if (buffer_len(&cli->output) == 0) {
+		if (epoll_toggle_write(s->epoll, cli->sock, 1) < 0) {
+			return -1;
+		}
+	}
+	return format_message(msg, &cli->output);
+}
+
+int respond_nullary(struct server *s, struct client *cli, enum message_type type)
+{
+	struct message resp;
+	resp.type = type;
+	return respond(s, cli, &resp);
+}
+
+int respond_err(struct server *s, struct client *cli, enum message_type type, char *text)
+{
+	struct message resp;
+	resp.type = type;
+	resp.data.err.text = text;
+	return respond(s, cli, &resp);
+}
+
 int server_accept(struct server *s)
 {
 	struct client *cli;
@@ -202,46 +239,14 @@ int server_disconnect(struct server *s, struct client *cli)
 	if (s->waiting_client == cli->sock) {
 		s->waiting_client = -1;
 	}
-	hashmap_remove(&s->clients_by_fd, (void *)(intptr_t)sock);
-	printf("client %d disconnected\n", sock);
-	return 0;
-}
-
-int epoll_toggle_write(int epoll, int sock, int on)
-{
-	struct epoll_event event = {0};
-	if (on) {
-		event.events = EPOLLIN | EPOLLOUT;
-	} else {
-		event.events = EPOLLIN;
-	}
-	event.data.fd = sock;
-	return epoll_ctl(epoll, EPOLL_CTL_MOD, sock, &event);
-}
-
-int respond(struct server *s, struct client *cli, struct message *msg)
-{
-	if (buffer_len(&cli->output) == 0) {
-		if (epoll_toggle_write(s->epoll, cli->sock, 1) < 0) {
+	if (cli->pair) {
+		if (respond_nullary(s, client_other(cli), MSG_NOTIFY_QUIT) < 0) {
 			return -1;
 		}
 	}
-	return format_message(msg, &cli->output);
-}
-
-int respond_nullary(struct server *s, struct client *cli, enum message_type type)
-{
-	struct message resp;
-	resp.type = type;
-	return respond(s, cli, &resp);
-}
-
-int respond_err(struct server *s, struct client *cli, enum message_type type, char *text)
-{
-	struct message resp;
-	resp.type = type;
-	resp.data.err.text = text;
-	return respond(s, cli, &resp);
+	hashmap_remove(&s->clients_by_fd, (void *)(intptr_t)sock);
+	printf("client %d disconnected\n", sock);
+	return 0;
 }
 
 int handle_login(struct server *s, struct client *cli, char *name)
