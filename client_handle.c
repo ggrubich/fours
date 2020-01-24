@@ -13,9 +13,33 @@ static int goto_lobby(struct client *c)
 	return RES_OK;
 }
 
+static enum side **create_board(int width, int height)
+{
+	int i, j;
+	enum side **board;
+	board = malloc(width * sizeof(*board));
+	if (!board) {
+		return NULL;
+	}
+	for (i = 0; i < width; ++i) {
+		board[i] = malloc(height * sizeof(**board));
+		if (!board[i]) {
+			for (j = 0; j < i; ++j) {
+				free(board[j]);
+			}
+			free(board);
+			return NULL;
+		}
+		for (j = 0; j < height; ++j) {
+			board[i][j] = SIDE_NONE;
+		}
+	}
+	return board;
+}
+
 static int goto_game(struct client *c, struct message *msg)
 {
-	int i;
+	int i, j;
 	struct game_base *base = &c->data.game.b;
 	c->state = STATE_GAME;
 	base->other = strdup(msg->data.start_ok.other);
@@ -27,22 +51,10 @@ static int goto_game(struct client *c, struct message *msg)
 	base->height = msg->data.start_ok.height;
 	base->column = base->width / 2 + 1;
 	base->turn = SIDE_RED;
-	base->board = malloc(base->width * sizeof(*base->board));
+	base->board = create_board(base->width, base->height);
 	if (!base->board) {
 		free(base->other);
 		return RES_ERR;
-	}
-	for (i = 0; i < base->width; ++i) {
-		base->board[i] = malloc(base->height * sizeof(**base->board));
-		if (!base->board[i]) {
-			while (i >= 0) {
-				free(base->board[i]);
-				--i;
-			}
-			free(base->board);
-			free(base->other);
-			return RES_ERR;
-		}
 	}
 	return RES_OK;
 }
