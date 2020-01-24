@@ -88,6 +88,14 @@ void client_free_(void *cli)
 	client_free((struct client *)cli);
 }
 
+struct client *client_other(struct client *cli)
+{
+	if (!cli->pair) {
+		return NULL;
+	}
+	return cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+}
+
 struct server {
 	int epoll;
 	int listener;
@@ -265,10 +273,8 @@ int respond_start_ok(struct server *s, struct client *cli)
 {
 	struct message resp;
 	resp.type = MSG_START_OK;
-	int red = cli == cli->pair->red;
-	struct client *other = red ? cli->pair->blue : cli->pair->red;
-	resp.data.start_ok.other = other->name;
-	resp.data.start_ok.red = red;
+	resp.data.start_ok.other = client_other(cli)->name;
+	resp.data.start_ok.red = cli == cli->pair->red;
 	resp.data.start_ok.width = cli->pair->game.width;
 	resp.data.start_ok.height = cli->pair->game.height;
 	return respond(s, cli, &resp);
@@ -324,7 +330,7 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	if (respond_nullary(s, cli, MSG_DROP_OK) < 0) {
 		return -1;
 	}
-	other = cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+	other = client_other(cli);
 	resp.type = MSG_NOTIFY_DROP;
 	resp.data.notify_drop.red = color;
 	resp.data.notify_drop.column = column;
@@ -352,7 +358,7 @@ int handle_quit(struct server *s, struct client *cli)
 {
 	struct client *other;
 	if (cli->pair) {
-		other = cli == cli->pair->red ? cli->pair->blue : cli->pair->red;
+		other = client_other(cli);
 		pair_free(cli->pair);
 		if (respond_nullary(s, other, MSG_NOTIFY_QUIT) < 0) {
 			return -1;
