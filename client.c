@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <ncurses.h>
 #include <sys/epoll.h>
 #include <arpa/inet.h>
@@ -308,6 +309,18 @@ int client_run(struct client *c)
 	while (1) {
 		nfds = epoll_wait(c->epoll, events, MAX_EVENTS, -1);
 		if (nfds < 0) {
+			if (errno == EINTR) {
+				// TODO handle SIGWINCH properly. for now
+				// we just catch it at epoll_wait, but it can
+				// also interrupt other syscalls and we should
+				// probably do something about it.
+				if ((res = render(c)) < 0) {
+					return res;
+				}
+				refresh();
+				errno = 0;
+				continue;
+			}
 			return RES_ERR;
 		}
 		for (i = 0; i < nfds; ++i) {
