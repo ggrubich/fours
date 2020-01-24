@@ -35,6 +35,7 @@ enum client_state {
 	STATE_START_WAIT,
 	STATE_GAME,
 	STATE_GAME_QUIT,
+	STATE_GAME_OVER,
 	STATE_HALTED,
 };
 
@@ -48,6 +49,16 @@ enum {
 	GAME_QUIT_YES,
 	GAME_QUIT_NO,
 	GAME_QUIT_LEN,
+};
+
+struct game_base {
+	char *other;
+	enum side side;
+	enum side **board;
+	int width;
+	int height;
+	int column;
+	enum side turn;
 };
 
 struct client {
@@ -71,14 +82,24 @@ struct client {
 		} lobby;
 
 		struct {
+			struct game_base b;
+		} game;
+		struct {
+			struct game_base b;
 			int index;
 		} game_quit;
+		struct {
+			struct game_base b;
+			enum side winner;
+		} game_over;
 	} data;
 };
 
 int request(struct client *c, struct message *msg);
 
 int client_init(struct client *c, struct sockaddr_in addr, char *name);
+
+void finalize_state(struct client *c);
 
 void client_finalize(struct client *c);
 

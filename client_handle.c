@@ -13,6 +13,48 @@ static int goto_lobby(struct client *c)
 	return RES_OK;
 }
 
+static int goto_game(struct client *c, struct message *msg)
+{
+	int i;
+	struct game_base *base = &c->data.game.b;
+	c->state = STATE_GAME;
+	base->other = strdup(msg->data.start_ok.other);
+	if (!base->other) {
+		return RES_ERR;
+	}
+	base->side = msg->data.start_ok.side;
+	base->width = msg->data.start_ok.width;
+	base->height = msg->data.start_ok.height;
+	base->column = base->width / 2 + 1;
+	base->turn = SIDE_RED;
+	base->board = malloc(base->width * sizeof(*base->board));
+	if (!base->board) {
+		free(base->other);
+		return RES_ERR;
+	}
+	for (i = 0; i < base->width; ++i) {
+		base->board[i] = malloc(base->height * sizeof(**base->board));
+		if (!base->board[i]) {
+			while (i >= 0) {
+				free(base->board[i]);
+				--i;
+			}
+			free(base->board);
+			free(base->other);
+			return RES_ERR;
+		}
+	}
+	return RES_OK;
+}
+
+static void move_cursor(int delta, int *idx, int len)
+{
+	int new_idx = *idx + delta;
+	if (new_idx >= 0 && new_idx < len) {
+		*idx = new_idx;
+	}
+}
+
 static int handle_login_wait(struct client *c, struct event *ev)
 {
 	struct message *msg;
@@ -56,14 +98,10 @@ static int handle_lobby(struct client *c, struct event *ev)
 	if (ev->type == EVENT_INPUT) {
 		switch (ev->data.ch) {
 		case KEY_UP:
-			if (c->data.lobby.index != 0) {
-				--c->data.lobby.index;
-			}
+			move_cursor(-1, &c->data.lobby.index, LOBBY_LEN);
 			break;
 		case KEY_DOWN:
-			if (c->data.lobby.index + 1 < LOBBY_LEN) {
-				++c->data.lobby.index;
-			}
+			move_cursor(1, &c->data.lobby.index, LOBBY_LEN);
 			break;
 		case KEY_ENTER:
 		case '\n':
@@ -105,8 +143,7 @@ static int handle_start_wait(struct client *c, struct event *ev)
 			// should not happen anyway
 			return RES_INVALID_MSG;
 		case MSG_START_OK:
-			c->state = STATE_GAME;
-			break;
+			return goto_game(c, msg);
 		default:
 			break;
 		}
@@ -116,12 +153,29 @@ static int handle_start_wait(struct client *c, struct event *ev)
 
 static int handle_game(struct client *c, struct event *ev)
 {
+	int column, row;
+	struct message req;
 	struct message *msg;
+	int res;
 	if (ev->type == EVENT_INPUT) {
 		switch (ev->data.ch) {
 		case KEY_ESC:
 			c->state = STATE_GAME_QUIT;
 			c->data.game_quit.index = 0;
+			break;
+		case KEY_LEFT:
+			move_cursor(-1, &c->data.game.b.column, c->data.game.b.width);
+			break;
+		case KEY_RIGHT:
+			move_cursor(1, &c->data.game.b.column, c->data.game.b.width);
+			break;
+		case KEY_ENTER:
+		case '\n':
+			req.type = MSG_DROP;
+			req.data.drop.column = c->data.game.b.column;
+			if ((res = request(c, &req)) < 0) {
+				return res;
+			}
 			break;
 		default:
 			break;
@@ -130,7 +184,20 @@ static int handle_game(struct client *c, struct event *ev)
 		msg = ev->data.msg;
 		switch (msg->type) {
 		case MSG_NOTIFY_QUIT:
+			finalize_state(c);
 			c->state = STATE_HALTED;
+			break;
+		case MSG_NOTIFY_OVER:
+			c->state = STATE_GAME_OVER;
+			c->data.game_over.winner = msg->data.notify_over.winner;
+			break;
+		case MSG_NOTIFY_DROP:
+			column = msg->data.notify_drop.column;
+			row = msg->data.notify_drop.row;
+			c->data.game.b.board[column][row] = msg->data.notify_drop.side;
+			c->data.game.b.turn = msg->data.notify_drop.side == SIDE_RED
+				? SIDE_BLUE
+				: SIDE_RED;
 			break;
 		default:
 			break;
@@ -141,20 +208,15 @@ static int handle_game(struct client *c, struct event *ev)
 
 static int handle_game_quit(struct client *c, struct event *ev)
 {
-	struct message *msg;
 	struct message req;
 	int res;
 	if (ev->type == EVENT_INPUT) {
 		switch (ev->data.ch) {
 		case KEY_UP:
-			if (c->data.game_quit.index != 0) {
-				--c->data.game_quit.index;
-			}
+			move_cursor(-1, &c->data.game_quit.index, GAME_QUIT_LEN);
 			break;
 		case KEY_DOWN:
-			if (c->data.game_quit.index < GAME_QUIT_LEN) {
-				++c->data.game_quit.index;
-			}
+			move_cursor(1, &c->data.game_quit.index, GAME_QUIT_LEN);
 			break;
 		case KEY_ENTER:
 		case '\n':
@@ -163,18 +225,27 @@ static int handle_game_quit(struct client *c, struct event *ev)
 				if ((res = request(c, &req)) < 0) {
 					return res;
 				}
-				goto_lobby(c);
+				finalize_state(c);
+				return goto_lobby(c);
 			} else {
 				c->state = STATE_GAME;
 			}
 			break;
 		}
 	} else if (ev->type == EVENT_MSG) {
-		msg = ev->data.msg;
-		switch (msg->type) {
-		case MSG_NOTIFY_QUIT:
-			c->state = STATE_HALTED;
-			break;
+		return handle_game(c, ev);
+	}
+	return RES_OK;
+}
+
+static int handle_game_over(struct client *c, struct event *ev)
+{
+	if (ev->type == EVENT_INPUT) {
+		switch (ev->data.ch) {
+		case KEY_ENTER:
+		case '\n':
+			finalize_state(c);
+			return goto_lobby(c);
 		default:
 			break;
 		}
@@ -205,6 +276,8 @@ int handle(struct client *c, struct event *ev)
 		return handle_game(c, ev);
 	case STATE_GAME_QUIT:
 		return handle_game_quit(c, ev);
+	case STATE_GAME_OVER:
+		return handle_game_over(c, ev);
 	case STATE_HALTED:
 		return handle_halted(c, ev);
 	}

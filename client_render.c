@@ -159,7 +159,10 @@ static int render_game(struct client *c)
 {
 	// TODO game
 	move(0, 0);
-	printw("game should be here");
+	printw("side %s\n", c->data.game.b.side == SIDE_RED ? "red" : "blue");
+	printw("other %s\n", c->data.game.b.other);
+	printw("column %d\n", c->data.game.b.column);
+	printw("turn %s\n", c->data.game.b.turn == SIDE_RED ? "red" : "blue");
 	return RES_OK;
 }
 
@@ -170,6 +173,13 @@ static int render_game_quit(struct client *c)
 			GAME_QUIT,
 			GAME_QUIT_LEN,
 			c->data.game_quit.index);
+	return RES_OK;
+}
+
+static int render_game_over(struct client *c)
+{
+	move(0, 0);
+	printw("%s wins\n", c->data.game_over.winner == SIDE_RED ? "red" : "blue");
 	return RES_OK;
 }
 
@@ -195,6 +205,8 @@ int render(struct client *c)
 		return render_game(c);
 	case STATE_GAME_QUIT:
 		return render_game_quit(c);
+	case STATE_GAME_OVER:
+		return render_game_over(c);
 	case STATE_HALTED:
 		return render_halted(c);
 	}

@@ -83,20 +83,35 @@ int client_init(struct client *c, struct sockaddr_in addr, char *name)
 	return RES_OK;
 }
 
+void finalize_state(struct client *c)
+{
+	int i;
+	switch (c->state) {
+	case STATE_LOGIN_ERR:
+		free(c->data.login_err);
+		break;
+	case STATE_GAME:
+	case STATE_GAME_QUIT:
+	case STATE_GAME_OVER:
+		free(c->data.game.b.other);
+		for (i = 0; i < c->data.game.b.width; ++i) {
+			free(c->data.game.b.board[i]);
+		}
+		free(c->data.game.b.board);
+		break;
+	default:
+		break;
+	}
+}
+
 void client_finalize(struct client *c)
 {
 	free(c->name);
 	close(c->conn);
 	buffer_finalize(&c->input);
 	buffer_finalize(&c->output);
+	finalize_state(c);
 	endwin();
-	switch (c->state) {
-	case STATE_LOGIN_ERR:
-		free(c->data.login_err);
-		break;
-	default:
-		break;
-	}
 }
 
 
