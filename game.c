@@ -42,44 +42,37 @@ void game_finalize(struct game *g)
 	free(g->fields);
 }
 
-static int line_equal(struct game *g, int startx, int starty, int dx, int dy)
+static int count_equal(struct game *g, int startx, int starty, int dx, int dy)
 {
-	int endx, endy;
 	int x, y;
-	endx = startx + (LINE_LENGTH - 1) * dx;
-	endy = starty + (LINE_LENGTH - 1) * dy;
-	if (endx < 0 || endx >= g->width) {
-		return 0;
-	}
-	if (endy < 0 || endy >= g->height) {
-		return 0;
-	}
-	x = startx;
-	y = starty;
-	while (x != endx || y != endy) {
+	int count = 0;
+	x = startx + dx;
+	y = starty + dy;
+	while (x >= 0 && x < g->width && y >= 0 && y < g->height) {
 		if (g->fields[x][y] != g->fields[startx][starty]) {
-			return 0;
+			break;
 		}
+		++count;
 		x += dx;
 		y += dy;
 	}
-	return 1;
+	return count;
+
 }
 
-static int is_connected(struct game *g, int x, int y)
+static int is_line(struct game *g, int startx, int starty, int dx, int dy)
 {
-	int dx, dy;
-	if (line_equal(g, x, y, 0, -1)) {
-		return 1;
-	}
-	for (dx = -1; dx <= 1; dx += 2) {
-		for (dy = -1; dy <= 1; ++dy) {
-			if (line_equal(g, x, y, dx, dy)) {
-				return 1;
-			}
-		}
-	}
-	return 0;
+	int len = 1 + count_equal(g, startx, starty, -dx, -dy)
+		+ count_equal(g, startx, starty, dx, dy);
+	return len >= LINE_LENGTH;
+}
+
+static int is_connected(struct game *g, int startx, int starty)
+{
+	return is_line(g, startx, starty, 1, 0)
+		|| is_line(g, startx, starty, 0, 1)
+		|| is_line(g, startx, starty, 1, 1)
+		|| is_line(g, startx, starty, 1, -1);
 }
 
 int game_drop(struct game *g, enum side side, int x)
