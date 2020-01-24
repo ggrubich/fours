@@ -41,6 +41,14 @@ enum client_state {
 	STATE_LOBBY,
 };
 
+const char *LOBBY[] = {"START", "QUIT"};
+
+enum {
+	LOBBY_START,
+	LOBBY_QUIT,
+	LOBBY_LEN,
+};
+
 struct client {
 	int epoll;
 
@@ -53,6 +61,9 @@ struct client {
 	enum client_state state;
 	union {
 		char *login_err;
+		struct {
+			int index;
+		} lobby;
 	} data;
 };
 
@@ -124,6 +135,7 @@ int client_init(struct client *c, struct sockaddr_in addr, char *name)
 	initscr();
 	noecho();
 	keypad(stdscr, TRUE);
+	curs_set(0);
 	return RES_OK;
 }
 
@@ -151,6 +163,7 @@ int handle_login_wait(struct client *c, struct event *ev)
 		switch (msg->type) {
 		case MSG_LOGIN_OK:
 			c->state = STATE_LOBBY;
+			c->data.lobby.index = 0;
 			break;
 		case MSG_LOGIN_ERR:
 			c->state = STATE_LOGIN_ERR;
@@ -168,13 +181,44 @@ int handle_login_wait(struct client *c, struct event *ev)
 
 int handle_login_err(struct client *c, struct event *ev)
 {
-	// TODO do something
+	if (ev->type == EVENT_INPUT) {
+		switch (ev->data.ch) {
+		case KEY_ENTER:
+		case '\n':
+			return RES_QUIT;
+		default:
+			break;
+		}
+	}
 	return RES_OK;
 }
 
 int handle_lobby(struct client *c, struct event *ev)
 {
-	// TODO do something
+	if (ev->type == EVENT_INPUT) {
+		switch (ev->data.ch) {
+		case KEY_UP:
+			if (c->data.lobby.index != 0) {
+				--c->data.lobby.index;
+			}
+			break;
+		case KEY_DOWN:
+			if (c->data.lobby.index + 1 < LOBBY_LEN) {
+				++c->data.lobby.index;
+			}
+			break;
+		case KEY_ENTER:
+		case '\n':
+			switch (c->data.lobby.index) {
+			case LOBBY_QUIT:
+				return RES_QUIT;
+			default:
+				break;
+			}
+		default:
+			break;
+		}
+	}
 	return RES_OK;
 }
 
@@ -191,6 +235,123 @@ int handle(struct client *c, struct event *ev)
 	return RES_OK;
 }
 
+void padded(const char *text, int left, int right)
+{
+	int i;
+	for (i = 0; i < left; ++i) {
+		addch(' ');
+	}
+	printw("%s", text);
+	for (i = 0; i < right; ++i) {
+		addch(' ');
+	}
+}
+
+void centered(const char *text, int width)
+{
+	int pad = width - strlen(text);
+	int left = pad / 2;
+	int right = pad - left;
+	padded(text, left, right);
+}
+
+const int MENU_PAD = 6;
+
+void render_menu(const char **items, int len, int current)
+{
+	int height, width;
+	int i;
+	int item_width = 0;
+	int startx, starty;
+	for (i = 0; i < len; ++i) {
+		if (strlen(items[i]) > item_width) {
+			item_width = strlen(items[i]);
+		}
+	}
+	item_width += MENU_PAD;
+	getmaxyx(stdscr, height, width);
+	if (len > height || item_width > width) {
+		move(0, 0);
+		printw("screen to small\n");
+		return;
+	}
+	starty = (height - len) / 2;
+	startx = (width - item_width) / 2;
+	for (i = 0; i < len; ++i) {
+		if (i == current) {
+			attron(A_REVERSE);
+		}
+		move(starty + i, startx);
+		padded(items[i], 1, item_width - strlen(items[i]) - 1);
+		if (i == current) {
+			attroff(A_REVERSE);
+		}
+	}
+}
+
+void frame(int width, int height)
+{
+	int y, x;
+	getyx(stdscr, y, x);
+	mvhline(y, x, 0, width);
+	mvhline(y + height - 1, x, 0, width);
+	mvvline(y, x, 0, height);
+	mvvline(y, x + width - 1, 0, height);
+	mvaddch(y, x, ACS_ULCORNER);
+	mvaddch(y, x + width - 1, ACS_URCORNER);
+	mvaddch(y + height - 1, x, ACS_LLCORNER);
+	mvaddch(y + height - 1, x + width - 1, ACS_LRCORNER);
+}
+
+const int DIALOG_PAD = 2;
+
+int dialog_width(const char *title, const char *text, const char **choices, int len)
+{
+	int i;
+	int width = strlen(title);
+	if (strlen(text) > width) {
+		width = strlen(text);
+	}
+	for (i = 0; i < len; ++i) {
+		if (strlen(choices[i]) > width) {
+			width = strlen(choices[i]);
+		}
+	}
+	return width + (2 * DIALOG_PAD);
+}
+
+void render_dialog(const char *title, const char *text,
+		const char **choices, int len, int current)
+{
+	int i;
+	int scr_height, scr_width;
+	int height, width;
+	int starty, startx;
+	getmaxyx(stdscr, scr_height, scr_width);
+	height = 7 + len;
+	width = dialog_width(title, text, choices, len);
+	starty = (scr_height - height) / 2;
+	startx = (scr_width - width) / 2;
+	move(starty, startx);
+	frame(width, height);
+	move(starty + 1, startx + DIALOG_PAD);
+	attron(A_BOLD);
+	centered(title, width - (2 * DIALOG_PAD));
+	attroff(A_BOLD);
+	move(starty + 3, startx + DIALOG_PAD);
+	centered(text, width - (2 * DIALOG_PAD));
+	for (i = 0; i < len; ++i) {
+		move(starty + 5 + i, startx + DIALOG_PAD);
+		if (i == current) {
+			attron(A_REVERSE);
+		}
+		centered(choices[i], width - (2 * DIALOG_PAD));
+		if (i == current) {
+			attroff(A_REVERSE);
+		}
+	}
+}
+
 int render_login_wait(struct client *c)
 {
 	move(0, 0);
@@ -200,17 +361,14 @@ int render_login_wait(struct client *c)
 
 int render_login_err(struct client *c)
 {
-	// TODO better error rendering
-	move(0, 0);
-	printw("login error: %s\n", c->data.login_err);
+	char *choices[] = {"OK"};
+	render_dialog("Error", c->data.login_err, (const char **)choices, 1, 0);
 	return RES_OK;
 }
 
 int render_lobby(struct client *c)
 {
-	// TODO render the menu
-	move(0, 0);
-	printw("lobby should be here\n");
+	render_menu(LOBBY, LOBBY_LEN, c->data.lobby.index);
 	return RES_OK;
 }
 
@@ -294,6 +452,17 @@ int client_write(struct client *c)
 	return RES_OK;
 }
 
+int client_redraw(struct client *c)
+{
+	int res;
+	clear();
+	if ((res = render(c)) < 0) {
+		return res;
+	}
+	refresh();
+	return RES_OK;
+}
+
 #define MAX_EVENTS 32
 
 int client_run(struct client *c)
@@ -302,10 +471,9 @@ int client_run(struct client *c)
 	int nfds;
 	int i;
 	int res;
-	if ((res = render(c)) < 0) {
+	if ((res = client_redraw(c)) < 0) {
 		return res;
 	}
-	refresh();
 	while (1) {
 		nfds = epoll_wait(c->epoll, events, MAX_EVENTS, -1);
 		if (nfds < 0) {
@@ -314,10 +482,9 @@ int client_run(struct client *c)
 				// we just catch it at epoll_wait, but it can
 				// also interrupt other syscalls and we should
 				// probably do something about it.
-				if ((res = render(c)) < 0) {
+				if ((res = client_redraw(c)) < 0) {
 					return res;
 				}
-				refresh();
 				errno = 0;
 				continue;
 			}
@@ -340,10 +507,9 @@ int client_run(struct client *c)
 					}
 				}
 			}
-			if ((res = render(c)) < 0) {
+			if ((res = client_redraw(c)) < 0) {
 				return res;
 			}
-			refresh();
 		}
 	}
 	return 0;
