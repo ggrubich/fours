@@ -330,11 +330,11 @@ static void render_base_game(struct client *c)
 	render_players(c);
 }
 
-const int MESSAGE_OFFSET = 4;
+const int TITLE_OFFSET = 4;
 
-static void render_game_message(char *msg)
+static void render_title(char *msg)
 {
-	move(MESSAGE_OFFSET, 0);
+	move(TITLE_OFFSET, 0);
 	attron(A_BOLD);
 	centered(msg, getmaxx(stdscr));
 	attroff(A_BOLD);
@@ -359,6 +359,7 @@ static int render_login_err(struct client *c)
 static int render_lobby(struct client *c)
 {
 	render_menu(LOBBY, LOBBY_LEN, c->data.lobby.index);
+	render_title("Connect Four");
 	return RES_OK;
 }
 
@@ -382,7 +383,7 @@ static int render_game(struct client *c)
 	} else {
 		msg = "Opponent's turn";
 	}
-	render_game_message(msg);
+	render_title(msg);
 	return RES_OK;
 }
 
