@@ -301,13 +301,10 @@ int handle_start(struct server *s, struct client *cli)
 	struct client *other;
 	struct pair *pair;
 	if (!cli->name) {
-		printf("one\n");
 		return respond_err(s, cli, MSG_START_ERR, "not logged in");
 	} else if (cli->pair) {
-		printf("two\n");
 		return respond_err(s, cli, MSG_START_ERR, "already in a game");
 	} else if (s->waiting_client == cli->sock) {
-		printf("three\n");
 		return respond_err(s, cli, MSG_START_ERR, "already waiting for a game");
 	}
 	if (hashmap_get(&s->clients_by_fd,
