@@ -295,20 +295,27 @@ const int PLAYER_PAD = 1;
 static void render_players(struct client *c)
 {
 	int left_attr, right_attr;
+	char left_buf[32], right_buf[32];
 	if (c->data.game.b.side == SIDE_RED) {
 		left_attr = A_BOLD | COLOR_PAIR(RED_TEXT_PAIR);
 		right_attr = A_BOLD | COLOR_PAIR(BLUE_TEXT_PAIR);
+		sprintf(left_buf, "undos: %d", c->data.game.b.red_undos);
+		sprintf(right_buf, "undos: %d", c->data.game.b.blue_undos);
 	} else {
 		left_attr = A_BOLD | COLOR_PAIR(BLUE_TEXT_PAIR);
 		right_attr = A_BOLD | COLOR_PAIR(RED_TEXT_PAIR);
+		sprintf(left_buf, "undos: %d", c->data.game.b.blue_undos);
+		sprintf(right_buf, "undos: %d", c->data.game.b.red_undos);
 	}
 
 	attron(left_attr);
 	left_sticking(PLAYER_PAD, PLAYER_PAD, c->name);
+	left_sticking(PLAYER_PAD + 1, PLAYER_PAD, left_buf);
 	attroff(left_attr);
 
 	attron(right_attr);
 	right_sticking(PLAYER_PAD, PLAYER_PAD, c->data.game.b.other);
+	right_sticking(PLAYER_PAD + 1, PLAYER_PAD, right_buf);
 	attroff(right_attr);
 }
 

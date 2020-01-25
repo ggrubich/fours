@@ -291,6 +291,8 @@ int respond_start_ok(struct server *s, struct client *cli)
 	resp.data.start_ok.side = client_side(cli);
 	resp.data.start_ok.width = cli->pair->game.width;
 	resp.data.start_ok.height = cli->pair->game.height;
+	resp.data.start_ok.red_undos = cli->pair->game.red_undos;
+	resp.data.start_ok.blue_undos = cli->pair->game.blue_undos;
 	return respond(s, cli, &resp);
 }
 
@@ -299,10 +301,13 @@ int handle_start(struct server *s, struct client *cli)
 	struct client *other;
 	struct pair *pair;
 	if (!cli->name) {
+		printf("one\n");
 		return respond_err(s, cli, MSG_START_ERR, "not logged in");
 	} else if (cli->pair) {
+		printf("two\n");
 		return respond_err(s, cli, MSG_START_ERR, "already in a game");
 	} else if (s->waiting_client == cli->sock) {
+		printf("three\n");
 		return respond_err(s, cli, MSG_START_ERR, "already waiting for a game");
 	}
 	if (hashmap_get(&s->clients_by_fd,
@@ -369,6 +374,36 @@ int handle_drop(struct server *s, struct client *cli, int column)
 	return 0;
 }
 
+int handle_undo(struct server *s, struct client *cli)
+{
+	struct message resp;
+	int column, row;
+	enum side side;
+	struct client *other;
+	if (!cli->pair) {
+		return respond_err(s, cli, MSG_DROP_ERR, "not in game right now");
+	}
+	side = client_side(cli);
+	if (game_undo(&cli->pair->game, side, &column, &row) < 0) {
+		return respond_err(s, cli, MSG_DROP_ERR, "can't undo here and now");
+	}
+	if (respond_nullary(s, cli, MSG_UNDO_OK) < 0) {
+		return -1;
+	}
+	other = client_other(cli);
+	resp.type = MSG_NOTIFY_UNDO;
+	resp.data.notify_undo.side = side;
+	resp.data.notify_undo.column = column;
+	resp.data.notify_undo.row = row;
+	if (respond(s, cli, &resp) < 0) {
+		return -1;
+	}
+	if (respond(s, other, &resp) < 0) {
+		return -1;
+	}
+	return 0;
+}
+
 int handle_quit(struct server *s, struct client *cli)
 {
 	struct client *other;
@@ -399,6 +434,8 @@ int handle_message(struct server *s, struct client *cli, struct message *msg)
 		return handle_start(s, cli);
 	case MSG_DROP:
 		return handle_drop(s, cli, msg->data.drop.column);
+	case MSG_UNDO:
+		return handle_undo(s, cli);
 	case MSG_QUIT:
 		return handle_quit(s, cli);
 	default:

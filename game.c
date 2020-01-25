@@ -3,6 +3,7 @@
 #include "game.h"
 
 const int LINE_LENGTH = 4;
+const int UNDOS = 3;
 
 int game_init(struct game *g, int width, int height)
 {
@@ -13,6 +14,10 @@ int game_init(struct game *g, int width, int height)
 	g->turn = SIDE_RED;
 	g->over = 0;
 	g->winner = SIDE_NONE;
+	g->red_undos = UNDOS;
+	g->blue_undos = UNDOS;
+	g->last_x = -1;
+	g->last_y = -1;
 	if (!g->fields) {
 		return -1;
 	}
@@ -95,5 +100,31 @@ int game_drop(struct game *g, enum side side, int x)
 		g->over = 1;
 		g->winner = side;
 	}
+	g->last_x = x;
+	g->last_y = y;
 	return y;
+}
+
+int game_undo(struct game *g, enum side side, int *x, int *y)
+{
+	if (g->over || g->turn == side || g->last_x < 0 || g->last_y < 0) {
+		return -1;
+	}
+	if ((side == SIDE_RED && g->red_undos == 0)
+			|| (side == SIDE_BLUE && g->blue_undos == 0))
+	{
+		return -1;
+	}
+	g->fields[g->last_x][g->last_y] = SIDE_NONE;
+	*x = g->last_x;
+	*y = g->last_y;
+	g->last_x = -1;
+	g->last_y = -1;
+	if (side == SIDE_RED) {
+		--g->red_undos;
+	} else {
+		--g->blue_undos;
+	}
+	g->turn = side;
+	return 0;
 }

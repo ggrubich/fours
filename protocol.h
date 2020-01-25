@@ -20,11 +20,16 @@ enum message_type {
 	MSG_DROP_OK,
 	MSG_DROP_ERR,
 
+	MSG_UNDO,
+	MSG_UNDO_OK,
+	MSG_UNDO_ERR,
+
 	MSG_QUIT,
 	MSG_QUIT_OK,
 	MSG_QUIT_ERR,
 
 	MSG_NOTIFY_DROP,
+	MSG_NOTIFY_UNDO,
 	MSG_NOTIFY_OVER,
 	MSG_NOTIFY_QUIT,
 };
@@ -45,6 +50,8 @@ struct message {
 			enum side side;
 			int width;
 			int height;
+			int red_undos;
+			int blue_undos;
 		} start_ok;
 
 		struct {
@@ -56,6 +63,11 @@ struct message {
 			int column;
 			int row;
 		} notify_drop;
+		struct {
+			enum side side;
+			int column;
+			int row;
+		} notify_undo;
 		struct {
 			enum side winner;
 		} notify_over;

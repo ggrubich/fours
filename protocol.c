@@ -301,6 +301,7 @@ void close_message(struct message *msg)
 	case MSG_LOGIN_ERR:
 	case MSG_START_ERR:
 	case MSG_DROP_ERR:
+	case MSG_UNDO_ERR:
 	case MSG_QUIT_ERR:
 		free(msg->data.err.text);
 		break;
@@ -395,8 +396,10 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	else if (decode_nullary(raw, "login_ok", MSG_LOGIN_OK, msg)) {}
 	else if (decode_err(raw, "login_err", MSG_LOGIN_ERR, msg)) {}
 	else if (decode_nullary(raw, "start", MSG_START, msg)) {}
-	else if (match(raw, "start_ok", 4,
+	else if (match(raw, "start_ok", 6,
 				FIELD_STRING,
+				FIELD_INTEGER,
+				FIELD_INTEGER,
 				FIELD_INTEGER,
 				FIELD_INTEGER,
 				FIELD_INTEGER))
@@ -406,6 +409,8 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		msg->data.start_ok.side = take_integer(raw, 2);
 		msg->data.start_ok.width = take_integer(raw, 3);
 		msg->data.start_ok.height = take_integer(raw, 4);
+		msg->data.start_ok.red_undos = take_integer(raw, 5);
+		msg->data.start_ok.blue_undos = take_integer(raw, 6);
 	}
 	else if (decode_err(raw, "start_err", MSG_START_ERR, msg)) {}
 	else if (match(raw, "drop", 1, FIELD_INTEGER)) {
@@ -414,6 +419,9 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 	}
 	else if (decode_nullary(raw, "drop_ok", MSG_DROP_OK, msg)) {}
 	else if (decode_err(raw, "drop_err", MSG_DROP_ERR, msg)) {}
+	else if (decode_nullary(raw, "undo", MSG_UNDO, msg)) {}
+	else if (decode_nullary(raw, "undo_ok", MSG_UNDO_OK, msg)) {}
+	else if (decode_err(raw, "undo_err", MSG_UNDO_ERR, msg)) {}
 	else if (decode_nullary(raw, "quit", MSG_QUIT, msg)) {}
 	else if (decode_nullary(raw, "quit_ok", MSG_QUIT_OK, msg)) {}
 	else if (decode_err(raw, "quit_err", MSG_QUIT_ERR, msg)) {}
@@ -426,6 +434,16 @@ static int decode_message(struct raw_message *raw, struct message *msg)
 		msg->data.notify_drop.side = take_integer(raw, 1);
 		msg->data.notify_drop.column = take_integer(raw, 2);
 		msg->data.notify_drop.row = take_integer(raw, 3);
+	}
+	else if (match(raw, "notify_undo", 3,
+				FIELD_INTEGER,
+				FIELD_INTEGER,
+				FIELD_INTEGER))
+	{
+		msg->type = MSG_NOTIFY_UNDO;
+		msg->data.notify_undo.side = take_integer(raw, 1);
+		msg->data.notify_undo.column = take_integer(raw, 2);
+		msg->data.notify_undo.row = take_integer(raw, 3);
 	}
 	else if (match(raw, "notify_over", 1, FIELD_INTEGER)) {
 		msg->type = MSG_NOTIFY_OVER;
@@ -531,7 +549,7 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 	case MSG_START:
 		return encode_nullary("start", raw);
 	case MSG_START_OK:
-		if (init_raw_message(raw, 5) < 0) {
+		if (init_raw_message(raw, 7) < 0) {
 			return -1;
 		}
 		set_symbol(raw, 0, "start_ok");
@@ -539,6 +557,8 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_integer(raw, 2, msg->data.start_ok.side);
 		set_integer(raw, 3, msg->data.start_ok.width);
 		set_integer(raw, 4, msg->data.start_ok.height);
+		set_integer(raw, 5, msg->data.start_ok.red_undos);
+		set_integer(raw, 6, msg->data.start_ok.blue_undos);
 		break;
 	case MSG_START_ERR:
 		return encode_err("start_err", msg, raw);
@@ -553,6 +573,12 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		return encode_nullary("drop_ok", raw);
 	case MSG_DROP_ERR:
 		return encode_err("drop_err", msg, raw);
+	case MSG_UNDO:
+		return encode_nullary("undo", raw);
+	case MSG_UNDO_OK:
+		return encode_nullary("undo_ok", raw);
+	case MSG_UNDO_ERR:
+		return encode_err("undo_err", msg, raw);
 	case MSG_QUIT:
 		return encode_nullary("quit", raw);
 	case MSG_QUIT_OK:
@@ -567,6 +593,15 @@ static int encode_message(struct message *msg, struct raw_message *raw)
 		set_integer(raw, 1, msg->data.notify_drop.side);
 		set_integer(raw, 2, msg->data.notify_drop.column);
 		set_integer(raw, 3, msg->data.notify_drop.row);
+		break;
+	case MSG_NOTIFY_UNDO:
+		if (init_raw_message(raw, 4) < 0) {
+			return -1;
+		}
+		set_symbol(raw, 0, "notify_undo");
+		set_integer(raw, 1, msg->data.notify_undo.side);
+		set_integer(raw, 2, msg->data.notify_undo.column);
+		set_integer(raw, 3, msg->data.notify_undo.row);
 		break;
 	case MSG_NOTIFY_OVER:
 		if (init_raw_message(raw, 2) < 0) {

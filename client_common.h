@@ -59,6 +59,8 @@ struct game_base {
 	int height;
 	int column;
 	enum side turn;
+	int red_undos;
+	int blue_undos;
 };
 
 struct client {

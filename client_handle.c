@@ -51,6 +51,8 @@ static int goto_game(struct client *c, struct message *msg)
 	base->height = msg->data.start_ok.height;
 	base->column = base->width / 2;
 	base->turn = SIDE_RED;
+	base->red_undos = msg->data.start_ok.red_undos;
+	base->blue_undos = msg->data.start_ok.blue_undos;
 	base->board = create_board(base->width, base->height);
 	if (!base->board) {
 		free(base->other);
@@ -165,6 +167,7 @@ static int handle_start_wait(struct client *c, struct event *ev)
 
 static int handle_game(struct client *c, struct event *ev)
 {
+	enum side side;
 	int column, row;
 	struct message req;
 	struct message *msg;
@@ -185,6 +188,12 @@ static int handle_game(struct client *c, struct event *ev)
 		case '\n':
 			req.type = MSG_DROP;
 			req.data.drop.column = c->data.game.b.column;
+			if ((res = request(c, &req)) < 0) {
+				return res;
+			}
+			break;
+		case 'u':
+			req.type = MSG_UNDO;
 			if ((res = request(c, &req)) < 0) {
 				return res;
 			}
@@ -210,6 +219,18 @@ static int handle_game(struct client *c, struct event *ev)
 			c->data.game.b.turn = msg->data.notify_drop.side == SIDE_RED
 				? SIDE_BLUE
 				: SIDE_RED;
+			break;
+		case MSG_NOTIFY_UNDO:
+			column = msg->data.notify_undo.column;
+			row = msg->data.notify_undo.row;
+			side = msg->data.notify_undo.side;
+			c->data.game.b.board[column][row] = SIDE_NONE;
+			c->data.game.b.turn = side;
+			if (side == SIDE_RED) {
+				--c->data.game.b.red_undos;
+			} else {
+				--c->data.game.b.blue_undos;
+			}
 			break;
 		default:
 			break;
