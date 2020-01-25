@@ -49,7 +49,7 @@ static int goto_game(struct client *c, struct message *msg)
 	base->side = msg->data.start_ok.side;
 	base->width = msg->data.start_ok.width;
 	base->height = msg->data.start_ok.height;
-	base->column = base->width / 2 + 1;
+	base->column = base->width / 2;
 	base->turn = SIDE_RED;
 	base->board = create_board(base->width, base->height);
 	if (!base->board) {
