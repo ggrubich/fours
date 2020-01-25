@@ -8,7 +8,7 @@
 
 const char *USAGE = "client HOST[:PORT] NAME";
 
-const int DEFAULT_PORT = 8080;
+const int DEFAULT_PORT = 8051;
 
 int parse_args(int argc, char **argv, struct sockaddr_in *addr, char **name)
 {

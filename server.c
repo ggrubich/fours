@@ -518,7 +518,7 @@ int server_run(struct server *s)
 	return 0;
 }
 
-const int DEFAULT_PORT = 8080;
+const int DEFAULT_PORT = 8051;
 const int DEFAULT_WIDTH = 7;
 const int DEFAULT_HEIGHT = 6;
 
