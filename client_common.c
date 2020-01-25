@@ -80,6 +80,7 @@ int client_init(struct client *c, struct sockaddr_in addr, char *name)
 	noecho();
 	keypad(stdscr, TRUE);
 	curs_set(0);
+	render_init();
 	return RES_OK;
 }
 
