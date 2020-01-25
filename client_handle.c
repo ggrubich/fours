@@ -39,7 +39,6 @@ static enum side **create_board(int width, int height)
 
 static int goto_game(struct client *c, struct message *msg)
 {
-	int i, j;
 	struct game_base *base = &c->data.game.b;
 	c->state = STATE_GAME;
 	base->other = strdup(msg->data.start_ok.other);
