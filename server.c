@@ -361,9 +361,9 @@ int handle_drop(struct server *s, struct client *cli, int column)
 		return -1;
 	}
 	if (game->over) {
-		pair_free(cli->pair);
 		resp.type = MSG_NOTIFY_OVER;
-		resp.data.notify_over.winner = side;
+		resp.data.notify_over.winner = game->winner;
+		pair_free(cli->pair);
 		if (respond(s, cli, &resp) < 0) {
 			return -1;
 		}

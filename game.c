@@ -80,6 +80,17 @@ static int is_connected(struct game *g, int startx, int starty)
 		|| is_line(g, startx, starty, 1, -1);
 }
 
+static int is_full(struct game *g)
+{
+	int i;
+	for (i = 0; i < g->width; ++i) {
+		if (g->fields[i][g->height - 1] == SIDE_NONE) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
 int game_drop(struct game *g, enum side side, int x)
 {
 	int y;
@@ -99,6 +110,9 @@ int game_drop(struct game *g, enum side side, int x)
 	if (is_connected(g, x, y)) {
 		g->over = 1;
 		g->winner = side;
+	} else if (is_full(g)) {
+		g->over = 1;
+		g->winner = SIDE_NONE;
 	}
 	g->last_x = x;
 	g->last_y = y;

@@ -403,7 +403,9 @@ static int render_game_over(struct client *c)
 	char *msg;
 	char *choices[] = {"BACK TO MENU"};
 	render_base_game(c);
-	if (c->data.game_over.b.side == c->data.game_over.winner) {
+	if (c->data.game_over.winner == SIDE_NONE) {
+		msg = "It's a draw";
+	} else if (c->data.game_over.b.side == c->data.game_over.winner) {
 		msg = "You win!";
 	} else {
 		msg = "You lose";
