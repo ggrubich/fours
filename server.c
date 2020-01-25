@@ -17,9 +17,6 @@
 #define MAX_READ 64
 #define MAX_WRITE 64
 
-#define GRID_WIDTH 7
-#define GRID_HEIGHT 6
-
 struct pair {
 	struct client *red;
 	struct client *blue;
@@ -111,6 +108,10 @@ struct server {
 	struct hashmap fds_by_name;
 	// fd of the client waiting for a game. -1 if empty.
 	int waiting_client;
+
+	// size of a game board
+	int game_width;
+	int game_height;
 };
 
 int make_listener(int port)
@@ -140,7 +141,7 @@ error:
 	return -1;
 }
 
-int server_init(struct server *s, int port)
+int server_init(struct server *s, int port, int game_width, int game_height)
 {
 	struct epoll_event event = {0};
 	s->epoll = epoll_create1(0);
@@ -162,6 +163,8 @@ int server_init(struct server *s, int port)
 	hashmap_init(&s->fds_by_name, &hashmap_string_equals, &hashmap_string_hash,
 			&free, NULL);
 	s->waiting_client = -1;
+	s->game_width = game_width;
+	s->game_height = game_height;
 	return 0;
 }
 
@@ -309,7 +312,7 @@ int handle_start(struct server *s, struct client *cli)
 		s->waiting_client = cli->sock;
 		return 0;
 	}
-	pair = pair_new(cli, other, GRID_WIDTH, GRID_HEIGHT);
+	pair = pair_new(cli, other, s->game_width, s->game_height);
 	if (!pair) {
 		return -1;
 	}
@@ -515,10 +518,62 @@ int server_run(struct server *s)
 	return 0;
 }
 
+const int DEFAULT_PORT = 8080;
+const int DEFAULT_WIDTH = 7;
+const int DEFAULT_HEIGHT = 6;
+
+const char *USAGE = "server [-p PORT] [-c COLUMNS] [-r ROWS]";
+
+int parse_natural(char *str)
+{
+	char *endptr;
+	int n = strtol(str, &endptr, 10);
+	if (*str == '\0' || *endptr != '\0') {
+		return -1;
+	}
+	return n;
+}
+
+int parse_args(int argc, char **argv, int *port, int *width, int *height)
+{
+	int c;
+	*port = DEFAULT_PORT;
+	*width = DEFAULT_WIDTH;
+	*height = DEFAULT_HEIGHT;
+	while ((c = getopt(argc, argv, "p:w:h:")) != -1) {
+		switch (c) {
+		case 'p':
+			if ((*port = parse_natural(optarg)) < 0) {
+				return -1;
+			}
+			break;
+		case 'w':
+			if ((*width = parse_natural(optarg)) < 0) {
+				return -1;
+			}
+			break;
+		case 'h':
+			if ((*height = parse_natural(optarg)) < 0) {
+				return -1;
+			}
+			break;
+		default:
+			return -1;
+		}
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
+	int port, width, height;
 	struct server srv;
-	if (server_init(&srv, 8080) < 0) {
+	if (parse_args(argc, argv, &port, &width, &height) < 0) {
+		fprintf(stderr, "invalid arguments\n");
+		fprintf(stderr, "%s\n", USAGE);
+		return 1;
+	}
+	if (server_init(&srv, port, width, height) < 0) {
 		perror("failed to initialize server");
 		return 1;
 	}
