@@ -93,9 +93,6 @@ struct game_base {
 };
 
 struct client {
-	int (*handle)(struct client *, struct event *);
-	int (*render)(struct client *);
-
 	int epoll;
 
 	struct sockaddr_in addr;
